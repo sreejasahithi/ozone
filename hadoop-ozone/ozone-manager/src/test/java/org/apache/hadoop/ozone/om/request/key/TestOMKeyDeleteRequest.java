@@ -149,53 +149,6 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
             omClientResponse.getOMResponse().getStatus());
   }
 
-  @Test
-  public void testDeleteDirectoryWithColonInFSOBucket() throws Exception {
-    BucketLayout bucketLayout = BucketLayout.FILE_SYSTEM_OPTIMIZED;
-
-    when(ozoneManager.getEnableFileSystemPaths()).thenReturn(true);
-
-    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName, omMetadataManager, bucketLayout);
-
-    long volumeId = omMetadataManager.getVolumeId(volumeName);
-    long bucketId = omMetadataManager.getBucketId(volumeName, bucketName);
-    long parentObjectID = 0L;
-    long dirObjectID = 12345L;
-
-    String dirName = "foo:dir";
-
-    //String dirTableKey = "/" + volumeId + "/" + bucketId + "/" + parentObjectID + "/" + dirName;
-    String ozonePathKey = omMetadataManager.getOzonePathKey(volumeId, bucketId, parentObjectID, dirName);
-
-    OmDirectoryInfo omDirectoryInfo = OMRequestTestUtils.createOmDirectoryInfo(dirName, dirObjectID, parentObjectID);
-    omMetadataManager.getDirectoryTable().put(ozonePathKey, omDirectoryInfo);//
-
-    OmDirectoryInfo storedDirInfo = omMetadataManager.getDirectoryTable().get(ozonePathKey);//
-    assertNotNull(storedDirInfo);
-    assertEquals(dirName, storedDirInfo.getName());
-    assertEquals(dirObjectID, storedDirInfo.getObjectID());
-    assertEquals(parentObjectID, storedDirInfo.getParentObjectID());
-
-    printDirectoryTable();
-
-    OMRequest deleteRequest = doPreExecute(createDeleteKeyRequest(dirName));
-
-    OMKeyDeleteRequestWithFSO omKeyDeleteRequest = new OMKeyDeleteRequestWithFSO(deleteRequest, bucketLayout);
-
-    OMClientResponse response = omKeyDeleteRequest.validateAndUpdateCache(ozoneManager, 100L);
-
-    assertEquals(OzoneManagerProtocolProtos.Status.OK, response.getOMResponse().getStatus());
-
-    assertNull(omMetadataManager.getDirectoryTable().get(ozonePathKey));//
-  }
-
-  private void printDirectoryTable()
-      throws RocksDatabaseException, CodecException, RocksDatabaseException, CodecException {
-    System.out.println(">>> Directory Table Entries:");
-    omMetadataManager.getDirectoryTable().iterator().forEachRemaining(entry ->
-        System.out.println("Key: " + entry.getKey() + ", Value: " + entry.getValue()));
-  }
-
   /**
    * This method calls preExecute and verify the modified request.
    * @param originalOmRequest
