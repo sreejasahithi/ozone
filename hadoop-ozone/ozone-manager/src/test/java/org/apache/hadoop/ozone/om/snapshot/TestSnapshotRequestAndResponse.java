@@ -173,6 +173,9 @@ public class TestSnapshotRequestAndResponse {
     bucketName = UUID.randomUUID().toString();
     OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
         omMetadataManager);
+    // Create a fallback replication config manually
+    ReplicationConfig fallbackConfig = ReplicationConfig.getDefault(new OzoneConfiguration());
+    when(ozoneManager.getDefaultReplicationConfig()).thenReturn(fallbackConfig);
     omSnapshotManager = new OmSnapshotManager(ozoneManager);
     when(ozoneManager.getOmSnapshotManager()).thenReturn(omSnapshotManager);
   }
