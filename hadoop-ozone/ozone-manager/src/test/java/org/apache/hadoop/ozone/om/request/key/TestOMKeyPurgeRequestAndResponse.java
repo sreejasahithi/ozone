@@ -21,12 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OmSnapshot;
@@ -178,6 +181,8 @@ public class TestOMKeyPurgeRequestAndResponse extends TestOMKeyRequest {
 
   @Test
   public void testKeyPurgeInSnapshot() throws Exception {
+    ReplicationConfig fallbackConfig = ReplicationConfig.getDefault(new OzoneConfiguration());
+    when(ozoneManager.getDefaultReplicationConfig()).thenReturn(fallbackConfig);
     // Create and Delete keys. The keys should be moved to DeletedKeys table
     Pair<List<String>, List<String>> deleteKeysAndRenamedEntry = createAndDeleteKeysAndRenamedEntry(1, null);
 
