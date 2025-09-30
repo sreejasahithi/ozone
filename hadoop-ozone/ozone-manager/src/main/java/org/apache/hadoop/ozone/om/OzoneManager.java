@@ -3633,6 +3633,26 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       return null;
     }
 
+    // Authorization check
+    UserGroupInformation currentUser = getRemoteUser();
+    if (currentUser != null) {
+      String currentUserName = currentUser.getShortUserName();
+
+      // If not querying own info, check if user has admin privileges
+      if (!currentUserName.equals(userPrincipal)) {
+        boolean isOzoneAdmin = isAdmin(currentUser);
+        boolean isTenantAdmin = isTenantAdminForUser(currentUser, userPrincipal);
+
+        if (!isOzoneAdmin && !isTenantAdmin) {
+          throw new OMException(
+              "User '" + currentUserName + "' is not authorized to access " +
+                  "tenant information for user '" + userPrincipal + "'. " +
+                  "Only admins and tenant admins can view other users' information.",
+              OMException.ResultCodes.PERMISSION_DENIED);
+        }
+      }
+    }
+
     final List<ExtendedUserAccessIdInfo> accessIdInfoList = new ArrayList<>();
 
     // Won't iterate cache here for a similar reason as in OM#listTenant
@@ -3685,6 +3705,39 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
         OMAction.TENANT_GET_USER_INFO, auditMap));
 
     return new TenantUserInfoValue(accessIdInfoList);
+  }
+
+  private boolean isTenantAdminForUser(UserGroupInformation currentUser, String targetUserPrincipal) {
+    try {
+      // Get target user's tenant information
+      final OmDBUserPrincipalInfo kerberosPrincipalInfo =
+          metadataManager.getPrincipalToAccessIdsTable().get(targetUserPrincipal);
+
+      if (kerberosPrincipalInfo == null) {
+        return false;
+      }
+
+      // Check if current user is tenant admin for any tenant that target user belongs to
+      for (String accessId : kerberosPrincipalInfo.getAccessIds()) {
+        try {
+          OmDBAccessIdInfo accessIdInfo = metadataManager.getTenantAccessIdTable().get(accessId);
+          if (accessIdInfo != null) {
+            String tenantId = accessIdInfo.getTenantId();
+            // Check both delegated and non-delegated admin privileges
+            if (multiTenantManager.isTenantAdmin(currentUser, tenantId, false) ||
+                multiTenantManager.isTenantAdmin(currentUser, tenantId, true)) {
+              return true;
+            }
+          }
+        } catch (IOException e) {
+          LOG.warn("Error checking tenant access for accessId: " + accessId, e);
+        }
+      }
+      return false;
+    } catch (IOException e) {
+      LOG.warn("Error checking tenant admin status for user: " + targetUserPrincipal, e);
+      return false;
+    }
   }
 
   @Override
