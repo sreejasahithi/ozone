@@ -33,9 +33,11 @@ import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_VALUE_LENGTH_LIMIT;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.X_AMZ_CONTENT_SHA256;
 import static org.apache.hadoop.ozone.s3.util.S3Utils.urlEncode;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.any;
@@ -757,5 +759,34 @@ class TestObjectPut {
     assertEquals(200, putResponse.getStatus());
     OzoneKeyDetails keyDetails = clientStub.getObjectStore().getS3Bucket(BUCKET_NAME).getKey(KEY_NAME);
     assertEquals(0, keyDetails.getDataSize());
+  }
+
+  @Test
+  public void testPutObjectWithUnsupportedHeader() throws IOException {
+    MultivaluedMap<String, String> testHeaders = new MultivaluedHashMap<>();
+    testHeaders.putSingle("x-amz-server-side-encryption", "AES256");
+    when(this.headers.getRequestHeaders()).thenReturn(testHeaders);
+
+    OS3Exception exception = assertThrows(OS3Exception.class, () -> {
+      objectEndpoint.put(BUCKET_NAME, KEY_NAME, CONTENT.length(), 0, "", null, null,
+          new ByteArrayInputStream(CONTENT.getBytes(UTF_8)));
+    });
+
+    assertEquals(INVALID_ARGUMENT.getCode(), exception.getCode());
+    assertTrue(exception.getErrorMessage().contains("not supported by Ozone"));
+  }
+
+  @Test
+  public void testPutObjectWithSupportedHeaders() throws IOException, OS3Exception {
+    MultivaluedMap<String, String> testHeaders = new MultivaluedHashMap<>();
+    testHeaders.putSingle("Content-Type", "application/json");
+    testHeaders.putSingle("x-amz-storage-class", "STANDARD");
+    when(this.headers.getRequestHeaders()).thenReturn(testHeaders);
+
+    // Should not throw exception
+    assertDoesNotThrow(() -> {
+      objectEndpoint.put(BUCKET_NAME, KEY_NAME, CONTENT.length(), 0, "", null, null,
+          new ByteArrayInputStream(CONTENT.getBytes(UTF_8)));
+    });
   }
 }

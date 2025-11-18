@@ -21,20 +21,33 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.INVALID_STORAGE_CLASS;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.newError;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.AWS_CHUNKED;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.COPY_SOURCE_HEADER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.COPY_SOURCE_HEADER_RANGE;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.COPY_SOURCE_IF_MODIFIED_SINCE;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.COPY_SOURCE_IF_UNMODIFIED_SINCE;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.CUSTOM_METADATA_COPY_DIRECTIVE_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.DECODED_CONTENT_LENGTH_HEADER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.EXPECTED_BUCKET_OWNER_HEADER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.EXPECTED_SOURCE_BUCKET_OWNER_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.MULTI_CHUNKS_UPLOAD_PREFIX;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.STORAGE_CLASS_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.STREAMING_UNSIGNED_PAYLOAD_TRAILER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_DIRECTIVE_HEADER;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.TAG_HEADER;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.UNSIGNED_PAYLOAD;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.X_AMZ_CONTENT_SHA256;
 
+import com.google.common.collect.ImmutableSet;
 import jakarta.annotation.Nonnull;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Set;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -178,6 +191,66 @@ public final class S3Utils {
     }
 
     return xAmzContentSha256Header;
+  }
+
+  /**
+   * x-amz-* headers that Ozone supports for PUT requests, built from S3Consts.
+   * Any x-amz-* header NOT in this list will be rejected.
+   */
+  private static final Set<String> SUPPORTED_AMZ_HEADERS_FOR_PUT = ImmutableSet.<String>builder()
+      // Copy-related headers
+      .add(COPY_SOURCE_HEADER)
+      .add(COPY_SOURCE_HEADER_RANGE)
+      .add(COPY_SOURCE_IF_MODIFIED_SINCE)
+      .add(COPY_SOURCE_IF_UNMODIFIED_SINCE)
+
+      // Storage and metadata headers
+      .add(STORAGE_CLASS_HEADER)
+      .add(DECODED_CONTENT_LENGTH_HEADER)
+      .add(TAG_HEADER)
+      .add(TAG_DIRECTIVE_HEADER)
+      .add(CUSTOM_METADATA_COPY_DIRECTIVE_HEADER)
+
+      // Authentication headers
+      .add(X_AMZ_CONTENT_SHA256)
+      .add("x-amz-date")
+      .add("x-amz-security-token")
+
+      // Bucket owner headers
+      .add(EXPECTED_BUCKET_OWNER_HEADER)
+      .add(EXPECTED_SOURCE_BUCKET_OWNER_HEADER)
+      .build();
+
+  public static void validatePutHeaders(MultivaluedMap<String, String> headers, String keyPath)
+      throws OS3Exception {
+    if (headers == null || headers.isEmpty()) {
+      return;
+    }
+
+    for (String header : headers.keySet()) {
+      String lowerHeader = header.toLowerCase();
+
+      // Only validate x-amz-* headers
+      if (!lowerHeader.startsWith("x-amz-")) {
+        continue;
+      }
+
+      // Allow custom metadata (x-amz-meta-*)
+      if (lowerHeader.startsWith(S3Consts.CUSTOM_METADATA_HEADER_PREFIX)) {
+        continue;
+      }
+
+      if (lowerHeader.equals("x-amz-acl")) {
+        throw newError(S3ErrorTable.NOT_IMPLEMENTED, keyPath);
+      }
+
+      // Reject any x-amz-* header that's not explicitly supported
+      if (!SUPPORTED_AMZ_HEADERS_FOR_PUT.contains(lowerHeader)) {
+        OS3Exception ex = S3ErrorTable.newError(S3ErrorTable.INVALID_ARGUMENT, keyPath);
+        ex.setErrorMessage("The header '" + header + "' is not supported by Ozone.");
+        throw ex;
+      }
+    }
   }
 
   /**
