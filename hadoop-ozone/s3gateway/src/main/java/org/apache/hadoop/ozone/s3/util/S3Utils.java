@@ -193,39 +193,37 @@ public final class S3Utils {
     return xAmzContentSha256Header;
   }
 
-  /**
-   * x-amz-* headers that Ozone supports for PUT requests, built from S3Consts.
-   * Any x-amz-* header NOT in this list will be rejected.
-   */
-  private static final Set<String> SUPPORTED_AMZ_HEADERS_FOR_PUT = ImmutableSet.<String>builder()
-      // Copy-related headers
-      .add(COPY_SOURCE_HEADER)
-      .add(COPY_SOURCE_HEADER_RANGE)
-      .add(COPY_SOURCE_IF_MODIFIED_SINCE)
-      .add(COPY_SOURCE_IF_UNMODIFIED_SINCE)
-
-      // Storage and metadata headers
-      .add(STORAGE_CLASS_HEADER)
-      .add(DECODED_CONTENT_LENGTH_HEADER)
-      .add(TAG_HEADER)
-      .add(TAG_DIRECTIVE_HEADER)
-      .add(CUSTOM_METADATA_COPY_DIRECTIVE_HEADER)
-
-      // Authentication headers
-      .add(X_AMZ_CONTENT_SHA256)
-      .add("x-amz-date")
-      .add("x-amz-security-token")
-
-      // Bucket owner headers
-      .add(EXPECTED_BUCKET_OWNER_HEADER)
-      .add(EXPECTED_SOURCE_BUCKET_OWNER_HEADER)
-      .build();
-
   public static void validatePutHeaders(MultivaluedMap<String, String> headers, String keyPath)
       throws OS3Exception {
     if (headers == null || headers.isEmpty()) {
       return;
     }
+    
+    //x-amz-* headers that Ozone supports for PUT requests, built from S3Consts.
+    //Any x-amz-* header NOT in this list will be rejected.
+    Set<String> supportedAMZHeader = ImmutableSet.<String>builder()
+        // Copy-related headers
+        .add(COPY_SOURCE_HEADER)
+        .add(COPY_SOURCE_HEADER_RANGE)
+        .add(COPY_SOURCE_IF_MODIFIED_SINCE)
+        .add(COPY_SOURCE_IF_UNMODIFIED_SINCE)
+
+        // Storage and metadata headers
+        .add(STORAGE_CLASS_HEADER)
+        .add(DECODED_CONTENT_LENGTH_HEADER)
+        .add(TAG_HEADER)
+        .add(TAG_DIRECTIVE_HEADER)
+        .add(CUSTOM_METADATA_COPY_DIRECTIVE_HEADER)
+
+        // Authentication headers
+        .add(X_AMZ_CONTENT_SHA256)
+        .add("x-amz-date")
+        .add("x-amz-security-token")
+
+        // Bucket owner headers
+        .add(EXPECTED_BUCKET_OWNER_HEADER)
+        .add(EXPECTED_SOURCE_BUCKET_OWNER_HEADER)
+        .build();
 
     for (String header : headers.keySet()) {
       String lowerHeader = header.toLowerCase();
@@ -245,7 +243,7 @@ public final class S3Utils {
       }
 
       // Reject any x-amz-* header that's not explicitly supported
-      if (!SUPPORTED_AMZ_HEADERS_FOR_PUT.contains(lowerHeader)) {
+      if (!supportedAMZHeader.contains(lowerHeader)) {
         OS3Exception ex = S3ErrorTable.newError(S3ErrorTable.INVALID_ARGUMENT, keyPath);
         ex.setErrorMessage("The header '" + header + "' is not supported by Ozone.");
         throw ex;

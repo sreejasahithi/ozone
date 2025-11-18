@@ -240,12 +240,12 @@ public class ObjectEndpoint extends EndpointBase {
     String copyHeader = null, storageType = null, storageConfig = null;
     DigestInputStream digestInputStream = null;
     try {
+      S3Utils.validatePutHeaders(headers.getRequestHeaders(), keyPath);
+      
       if (aclMarker != null) {
         s3GAction = S3GAction.PUT_OBJECT_ACL;
         throw newError(NOT_IMPLEMENTED, keyPath);
       }
-      S3Utils.validatePutHeaders(headers.getRequestHeaders(), keyPath);
-      
       OzoneVolume volume = getVolume();
       OzoneBucket bucket = volume.getBucket(bucketName);
       S3Owner.verifyBucketOwnerCondition(headers, bucketName, bucket.getOwner());
