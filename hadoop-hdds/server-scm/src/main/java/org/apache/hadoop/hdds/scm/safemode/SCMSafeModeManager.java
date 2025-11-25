@@ -24,8 +24,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.scm.container.ContainerManager;
 import org.apache.hadoop.hdds.scm.ha.SCMContext;
@@ -79,6 +82,9 @@ public class SCMSafeModeManager implements SafeModeManager {
   private final SCMContext scmContext;
   private final SafeModeMetrics safeModeMetrics;
 
+  private final long safeModeLogIntervalMs;
+  private java.util.Timer safeModeLogTimer;
+
   public SCMSafeModeManager(final ConfigurationSource conf,
                             final NodeManager nodeManager,
                             final PipelineManager pipelineManager,
@@ -89,6 +95,10 @@ public class SCMSafeModeManager implements SafeModeManager {
     this.serviceManager = serviceManager;
     this.scmContext = scmContext;
     this.safeModeMetrics = SafeModeMetrics.create();
+    this.safeModeLogIntervalMs = conf.getTimeDuration(
+        HddsConfigKeys.HDDS_SCM_SAFEMODE_LOG_INTERVAL,
+        HddsConfigKeys.HDDS_SCM_SAFEMODE_LOG_INTERVAL_DEFAULT,
+        java.util.concurrent.TimeUnit.MILLISECONDS);
 
     SafeModeRuleFactory.initialize(conf, scmContext, eventQueue,
         pipelineManager, containerManager, nodeManager);
@@ -107,9 +117,11 @@ public class SCMSafeModeManager implements SafeModeManager {
 
   public void start() {
     emitSafeModeStatus();
+    startSafeModePeriodicLogger();
   }
 
   public void stop() {
+    stopSafeModePeriodicLogger();
     safeModeMetrics.unRegister();
   }
 
@@ -123,6 +135,7 @@ public class SCMSafeModeManager implements SafeModeManager {
 
     // notify SCMServiceManager
     if (!safeModeStatus.isInSafeMode()) {
+      stopSafeModePeriodicLogger();
       // If safemode is off, then notify the delayed listeners with a delay.
       serviceManager.notifyStatusChanged();
     } else if (safeModeStatus.isPreCheckComplete()) {
@@ -223,6 +236,43 @@ public class SCMSafeModeManager implements SafeModeManager {
   public double getCurrentContainerThreshold() {
     return ((RatisContainerSafeModeRule) exitRules.get("RatisContainerSafeModeRule"))
         .getCurrentContainerThreshold();
+  }
+
+  private synchronized void startSafeModePeriodicLogger() {
+    if (!getInSafeMode() || safeModeLogTimer != null) {
+      return;
+    }
+    safeModeLogTimer = new java.util.Timer("SCM-SafeMode-Log", true);
+    safeModeLogTimer.scheduleAtFixedRate(new TimerTask() {
+      @Override
+      public void run() {
+        logSafeModeStatus();
+      }
+    }, 0L, safeModeLogIntervalMs);
+    LOG.info("Started periodic Safe Mode logging with interval {} ms", safeModeLogIntervalMs);
+  }
+
+  private void logSafeModeStatus() {
+    if (!getInSafeMode()) {
+      stopSafeModePeriodicLogger();
+      return;
+    }
+    SafeModeStatus s = status.get();
+    String rules = getRuleStatus().entrySet().stream()
+        .map(e -> e.getKey() + "(valid=" + e.getValue().getLeft() + ", " + e.getValue().getRight() + ")")
+        .collect(Collectors.joining(", "));
+    LOG.info(
+        "SCM SafeMode periodic status: state={}, preCheckComplete={}, validatedRules={}/{}, preCheckValidated={}/{}, rules=[{}]",
+        s, s.isPreCheckComplete(), validatedRules.size(), exitRules.size(),
+        validatedPreCheckRules.size(), preCheckRules.size(), rules);
+  }
+
+  private synchronized void stopSafeModePeriodicLogger() {
+    if (safeModeLogTimer != null) {
+      safeModeLogTimer.cancel();
+      safeModeLogTimer = null;
+      LOG.info("Stopped periodic Safe Mode logging");
+    }
   }
 
   /**
