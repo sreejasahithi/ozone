@@ -259,10 +259,12 @@ public class SCMSafeModeManager implements SafeModeManager {
     }
     SafeModeStatus s = status.get();
     String rules = getRuleStatus().entrySet().stream()
-        .map(e -> e.getKey() + "(valid=" + e.getValue().getLeft() + ", " + e.getValue().getRight() + ")")
+        .map(e -> e.getKey() + "(valid=" + e.getValue().getLeft() 
+            + ", " + e.getValue().getRight() + ")")
         .collect(Collectors.joining(", "));
     LOG.info(
-        "SCM SafeMode periodic status: state={}, preCheckComplete={}, validatedRules={}/{}, preCheckValidated={}/{}, rules=[{}]",
+        "SCM SafeMode periodic status: state={}, preCheckComplete={}, validatedRules={}/{}," +
+            " preCheckValidated={}/{}, rules=[{}]",
         s, s.isPreCheckComplete(), validatedRules.size(), exitRules.size(),
         validatedPreCheckRules.size(), preCheckRules.size(), rules);
   }
