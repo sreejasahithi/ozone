@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -145,6 +146,8 @@ import org.apache.hadoop.ozone.upgrade.UpgradeFinalization;
 import org.apache.hadoop.ozone.upgrade.UpgradeFinalization.StatusAndMessages;
 import org.apache.hadoop.ozone.util.ProtobufUtils;
 import org.apache.hadoop.security.token.Token;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class is the client-side translator to translate the requests made on
@@ -162,6 +165,8 @@ public final class StorageContainerLocationProtocolClientSideTranslatorPB
 
   private final StorageContainerLocationProtocolPB rpcProxy;
   private final SCMContainerLocationFailoverProxyProvider fpp;
+  private static final Logger LOG =
+      LoggerFactory.getLogger(StorageContainerLocationProtocolClientSideTranslatorPB.class);
 
   /**
    * Creates a new StorageContainerLocationProtocolClientSideTranslatorPB.
@@ -868,6 +873,62 @@ public final class StorageContainerLocationProtocolClientSideTranslatorPB
 
     return resp.getExitedSafeMode();
 
+  }
+
+  @Override
+  public Map<String, Boolean> inSafeModeAllNodes() throws IOException {
+    Map<String, Boolean> results = new LinkedHashMap<>();
+    InSafeModeRequestProto request = InSafeModeRequestProto.getDefaultInstance();
+
+    for (String nodeId : fpp.getSCMNodeIds()) {
+      try {
+        StorageContainerLocationProtocolPB proxy = fpp.getProxyForNode(nodeId);
+        ScmContainerLocationRequest wrapper = ScmContainerLocationRequest.newBuilder()
+            .setCmdType(Type.InSafeMode)
+            .setVersion(ClientVersion.CURRENT_VERSION)
+            .setTraceID(TracingUtil.exportCurrentSpan())
+            .setInSafeModeRequest(request)
+            .build();
+        ScmContainerLocationResponse response = proxy.submitRequest(NULL_RPC_CONTROLLER, wrapper);
+        results.put(nodeId, response.getInSafeModeResponse().getInSafeMode());
+      } catch (Exception e) {
+        // Skip unreachable nodes, they won't be included in the results map.
+        LOG.error("Failed to get safe mode status from SCM node {}: {}",
+            nodeId, e.getMessage(), e);
+      }
+    }
+    return results;
+  }
+
+  @Override
+  public Map<String, Map<String, Pair<Boolean, String>>> getSafeModeRuleStatusesAllNodes() throws IOException {
+    Map<String, Map<String, Pair<Boolean, String>>> results = new LinkedHashMap<>();
+    GetSafeModeRuleStatusesRequestProto request = GetSafeModeRuleStatusesRequestProto.getDefaultInstance();
+
+    for (String nodeId : fpp.getSCMNodeIds()) {
+      try {
+        StorageContainerLocationProtocolPB proxy = fpp.getProxyForNode(nodeId);
+        ScmContainerLocationRequest wrapper = ScmContainerLocationRequest.newBuilder()
+            .setCmdType(Type.GetSafeModeRuleStatuses)
+            .setVersion(ClientVersion.CURRENT_VERSION)
+            .setTraceID(TracingUtil.exportCurrentSpan())
+            .setGetSafeModeRuleStatusesRequest(request)
+            .build();
+        ScmContainerLocationResponse response = proxy.submitRequest(NULL_RPC_CONTROLLER, wrapper);
+
+        Map<String, Pair<Boolean, String>> ruleStatuses = new HashMap<>();
+        for (SafeModeRuleStatusProto statusProto : 
+            response.getGetSafeModeRuleStatusesResponse().getSafeModeRuleStatusesProtoList()) {
+          ruleStatuses.put(statusProto.getRuleName(), Pair.of(statusProto.getValidate(), statusProto.getStatusText()));
+        }
+        results.put(nodeId, ruleStatuses);
+      } catch (Exception e) {
+        // Skip unreachable nodes, they won't be included in the results map.
+        LOG.error("Failed to get safe mode status from SCM node {}: {}",
+            nodeId, e.getMessage(), e);
+      }
+    }
+    return results;
   }
 
   @Override

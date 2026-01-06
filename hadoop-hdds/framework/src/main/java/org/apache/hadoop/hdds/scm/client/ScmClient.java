@@ -335,6 +335,18 @@ public interface ScmClient extends Closeable {
   boolean forceExitSafeMode() throws IOException;
 
   /**
+   * Check if SCM nodes are in safe mode.
+   * @return Map of node ID to safe mode status
+   */
+  Map<String, Boolean> inSafeModeAllNodes() throws IOException;
+
+  /**
+   * Get safe mode rule statuses from all SCM nodes.
+   * @return Map of node ID to rule statuses
+   */
+  Map<String, Map<String, Pair<Boolean, String>>> getSafeModeRuleStatusesAllNodes() throws IOException;
+
+  /**
    * Start ReplicationManager.
    */
   void startReplicationManager() throws IOException;
