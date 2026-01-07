@@ -18,10 +18,17 @@
 package org.apache.hadoop.hdds.scm.cli;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.HddsUtils;
 import org.apache.hadoop.hdds.cli.HddsVersionProvider;
+import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.hdds.scm.client.ScmClient;
+import org.apache.hadoop.hdds.scm.ha.SCMNodeInfo;
+import org.apache.hadoop.ozone.ha.ConfUtils;
+import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
 /**
@@ -33,24 +40,92 @@ import picocli.CommandLine.Command;
     mixinStandardHelpOptions = true,
     versionProvider = HddsVersionProvider.class)
 public class SafeModeCheckSubcommand extends ScmSubcommand {
+  @CommandLine.Option(names = {"--all", "-a"},
+      description = "Show safe mode status for all SCM nodes in the service. " +
+          "When multiple SCM service IDs are configured, --service-id must be specified.")
+  private boolean allNodes;
 
   @Override
   public void execute(ScmClient scmClient) throws IOException {
-    boolean execReturn = scmClient.inSafeMode();
-
-    // Output data list
-    if (execReturn) {
-      System.out.println("SCM is in safe mode.");
+    if (allNodes) {
+      executeForAllNodes(scmClient);
     } else {
-      System.out.println("SCM is out of safe mode.");
+      executeForSingleNode(scmClient);
     }
-    if (isVerbose()) {
-      for (Map.Entry<String, Pair<Boolean, String>> entry :
-          scmClient.getSafeModeRuleStatuses().entrySet()) {
-        Pair<Boolean, String> value = entry.getValue();
-        System.out.printf("validated:%s, %s, %s%n",
-            value.getLeft(), entry.getKey(), value.getRight());
+  }
+
+  private void executeForSingleNode(ScmClient scmClient) throws IOException {
+    try {
+      boolean execReturn = scmClient.inSafeMode();
+      if (execReturn) {
+        System.out.println("SCM is in safe mode.");
+      } else {
+        System.out.println("SCM is out of safe mode.");
       }
+      if (isVerbose()) {
+        printSafeModeRuleStatus(scmClient);
+      }
+    } catch (Exception e) {
+      System.out.println("STATUS NOT AVAILABLE");
+      if (isVerbose()) {
+        System.out.println("Reason: " + e.getMessage());
+      }
+    }
+  }
+
+  private void executeForAllNodes(ScmClient scmClient) throws IOException {
+    final OzoneConfiguration conf = getOzoneConf();
+    String serviceId = HddsUtils.getScmServiceId(conf);
+
+    if (serviceId == null) {
+      executeForSingleNode(scmClient);
+      return;
+    }
+
+    System.out.println("Service ID: " + serviceId);
+    List<SCMNodeInfo> nodes = SCMNodeInfo.buildNodeInfo(conf);
+
+    if (nodes.isEmpty()) {
+      System.out.println("No nodes configured for service: " + serviceId);
+      return;
+    }
+
+    for (SCMNodeInfo node : nodes) {
+      OzoneConfiguration nodeConf = new OzoneConfiguration(conf);
+      String nodesKey = ConfUtils.addKeySuffixes(
+          ScmConfigKeys.OZONE_SCM_NODES_KEY, serviceId);
+      nodeConf.set(nodesKey, node.getNodeId());
+
+      try (ScmClient perNode = new ContainerOperationClient(nodeConf)) {
+        boolean inSafeMode = perNode.inSafeMode();
+        System.out.printf("%s [%s]: %s%n",
+            node.getScmClientAddress(),
+            node.getNodeId(),
+            inSafeMode ? "IN SAFE MODE" : "OUT OF SAFE MODE");
+
+        if (isVerbose()) {
+          printSafeModeRuleStatus(perNode);
+          System.out.println();
+        }
+      } catch (Exception e) {
+        System.out.printf("%s [%s]: STATUS NOT AVAILABLE%n",
+            node.getScmClientAddress(), node.getNodeId());
+        if (isVerbose()) {
+          System.out.println("  Reason: " + e.getMessage());
+        }
+      }
+    }
+  }
+
+  /**
+   * Print safe mode rule statuses.
+   */
+  private void printSafeModeRuleStatus(ScmClient scmClient) throws IOException {
+    for (Map.Entry<String, Pair<Boolean, String>> entry :
+        scmClient.getSafeModeRuleStatuses().entrySet()) {
+      Pair<Boolean, String> value = entry.getValue();
+      System.out.printf("validated:%s, %s, %s%n",
+          value.getLeft(), entry.getKey(), value.getRight());
     }
   }
 }

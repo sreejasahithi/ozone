@@ -21,6 +21,7 @@ import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_CLIENT_ADDRESS_
 import static org.apache.hadoop.hdds.utils.HddsServerUtil.getScmSecurityClient;
 
 import java.io.IOException;
+import java.util.List;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.HddsUtils;
 import org.apache.hadoop.hdds.cli.AbstractMixin;
@@ -30,6 +31,8 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.SCMSecurityProtocol;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.hdds.scm.client.ScmClient;
+import org.apache.hadoop.hdds.scm.ha.SCMNodeInfo;
+import org.apache.hadoop.ozone.ha.ConfUtils;
 import picocli.CommandLine;
 
 /**
@@ -59,7 +62,34 @@ public class ScmOption extends AbstractMixin {
 
   private void checkAndSetSCMAddressArg(MutableConfigurationSource conf) {
     if (StringUtils.isNotEmpty(scm)) {
-      conf.set(OZONE_SCM_CLIENT_ADDRESS_KEY, scm);
+      String serviceId = HddsUtils.getScmServiceId(conf);
+
+      if (serviceId != null) {
+        // In HA mode, find which node matches the provided address
+        // and override the nodes list to contain only that node
+        List<SCMNodeInfo> scmNodeInfoList = SCMNodeInfo.buildNodeInfo(conf);
+        String matchedNodeId = null;
+
+        for (SCMNodeInfo nodeInfo : scmNodeInfoList) {
+          if (scm.equals(nodeInfo.getScmClientAddress())) {
+            matchedNodeId = nodeInfo.getNodeId();
+            break;
+          }
+        }
+
+        if (matchedNodeId != null) {
+          // Override the nodes key to contain only the matched node
+          String nodesKey = ConfUtils.addKeySuffixes(
+              ScmConfigKeys.OZONE_SCM_NODES_KEY, scmServiceId);
+          conf.set(nodesKey, matchedNodeId);
+        } else {
+          throw new ConfigurationException(
+              "Provided SCM address '" + scm + "' does not match any configured " +
+                  "SCM node in HA cluster with service ID '" + scmServiceId);
+        }
+      } else {
+        conf.set(OZONE_SCM_CLIENT_ADDRESS_KEY, scm);
+      }
     }
 
     // Use the scm service Id passed from the client.
