@@ -76,7 +76,8 @@ public class SCMNodeInfo {
 
     List<SCMNodeInfo> scmNodeInfoList = new ArrayList<>();
     String scmServiceId = HddsUtils.getScmServiceId(conf);
-    if (scmServiceId != null) {
+    String scmClientAddressConfigValue = conf.get(OZONE_SCM_CLIENT_ADDRESS_KEY);
+    if (scmServiceId != null && scmClientAddressConfigValue == null) {
       ArrayList< String > scmNodeIds = new ArrayList<>(
           HddsUtils.getSCMNodeIds(conf, scmServiceId));
       if (scmNodeIds.isEmpty()) {
