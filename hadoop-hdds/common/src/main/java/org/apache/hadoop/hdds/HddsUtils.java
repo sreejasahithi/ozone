@@ -119,6 +119,18 @@ public final class HddsUtils {
   public static Collection<InetSocketAddress> getScmAddressForClients(
       ConfigurationSource conf) {
 
+    // First, check if a specific SCM client address is explicitly set (e.g., via --scm option).
+    // This takes precedence over HA configuration to allow targeting a specific SCM node.
+    String address = conf.getTrimmed(OZONE_SCM_CLIENT_ADDRESS_KEY);
+    if (address != null) {
+      int port = getHostPort(address)
+          .orElse(conf.getInt(OZONE_SCM_CLIENT_PORT_KEY,
+              OZONE_SCM_CLIENT_PORT_DEFAULT));
+      return Collections.singletonList(
+          NetUtils.createSocketAddr(getHostName(address).get() + ":" + port));
+    }
+
+    // If no specific address is set, use HA configuration if available
     if (getScmServiceId(conf) != null) {
       List<SCMNodeInfo> scmNodeInfoList = SCMNodeInfo.buildNodeInfo(conf);
       Collection<InetSocketAddress> scmAddressList =
@@ -134,35 +146,25 @@ public final class HddsUtils {
       }
       return scmAddressList;
     } else {
-      String address = conf.getTrimmed(OZONE_SCM_CLIENT_ADDRESS_KEY);
-      int port = -1;
+      // fall back to ozone.scm.names for non-ha
+      Collection<String> scmAddresses =
+          conf.getTrimmedStringCollection(OZONE_SCM_NAMES);
 
-      if (address == null) {
-        // fall back to ozone.scm.names for non-ha
-        Collection<String> scmAddresses =
-            conf.getTrimmedStringCollection(OZONE_SCM_NAMES);
-
-        if (scmAddresses.isEmpty()) {
-          throw new ConfigurationException("Ozone scm client address is not " +
-              "set. Configure one of these config " +
-              OZONE_SCM_CLIENT_ADDRESS_KEY + ", " + OZONE_SCM_NAMES);
-        }
-
-        if (scmAddresses.size() > 1) {
-          throw new ConfigurationException("For non-HA SCM " + OZONE_SCM_NAMES
-              + " should be set with single address");
-        }
-
-        address = scmAddresses.iterator().next();
-
-        port = conf.getInt(OZONE_SCM_CLIENT_PORT_KEY,
-            OZONE_SCM_CLIENT_PORT_DEFAULT);
-      } else {
-        port = getHostPort(address)
-            .orElse(conf.getInt(OZONE_SCM_CLIENT_PORT_KEY,
-                OZONE_SCM_CLIENT_PORT_DEFAULT));
+      if (scmAddresses.isEmpty()) {
+        throw new ConfigurationException("Ozone scm client address is not " +
+            "set. Configure one of these config " +
+            OZONE_SCM_CLIENT_ADDRESS_KEY + ", " + OZONE_SCM_NAMES);
       }
 
+      if (scmAddresses.size() > 1) {
+        throw new ConfigurationException("For non-HA SCM " + OZONE_SCM_NAMES
+            + " should be set with single address");
+      }
+
+      address = scmAddresses.iterator().next();
+
+      int port = conf.getInt(OZONE_SCM_CLIENT_PORT_KEY,
+          OZONE_SCM_CLIENT_PORT_DEFAULT);
       return Collections.singletonList(
           NetUtils.createSocketAddr(getHostName(address).get() + ":" + port));
     }
