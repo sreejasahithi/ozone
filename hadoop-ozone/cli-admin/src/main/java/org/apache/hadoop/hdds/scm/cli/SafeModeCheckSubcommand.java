@@ -21,14 +21,17 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.HddsUtils;
+import org.apache.hadoop.hdds.cli.AbstractSubcommand;
 import org.apache.hadoop.hdds.cli.HddsVersionProvider;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.scm.client.ScmClient;
 import org.apache.hadoop.hdds.scm.ha.SCMNodeInfo;
+import org.apache.hadoop.hdds.scm.protocolPB.StorageContainerLocationProtocolClientSideTranslatorPB.NodeIdHolder;
 import org.apache.hadoop.net.NetUtils;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -41,7 +44,10 @@ import picocli.CommandLine.Command;
     description = "Check if SCM is in safe mode",
     mixinStandardHelpOptions = true,
     versionProvider = HddsVersionProvider.class)
-public class SafeModeCheckSubcommand extends ScmSubcommand {
+public class SafeModeCheckSubcommand extends AbstractSubcommand implements Callable<Void> {
+  @CommandLine.Mixin
+  private ScmOption scmOption;
+
   @CommandLine.Option(names = {"--all", "-a"},
       description = "Show safe mode status for all SCM nodes in the service. " +
           "When multiple SCM service IDs are configured, --service-id must be specified.")
@@ -51,38 +57,42 @@ public class SafeModeCheckSubcommand extends ScmSubcommand {
   private List<SCMNodeInfo> nodes;
 
   @Override
-  public void execute(ScmClient scmClient) throws IOException {
+  public Void call() throws Exception {
     OzoneConfiguration conf = getOzoneConf();
     serviceId = HddsUtils.getScmServiceId(conf);
-    String scmAddress = getScmOption().getScm();
+    String scmAddress = scmOption.getScm();
     if (serviceId != null) {
       nodes = SCMNodeInfo.buildNodeInfo(conf);
     }
     
-    if (allNodes) {
-      executeForAllNodes(scmClient);
-    } else if (StringUtils.isNotEmpty(scmAddress)) {
-      executeForSpecificNode(scmClient, scmAddress);
-    } else {
-      executeForSingleNode(scmClient);
+    NodeIdHolder holder = new NodeIdHolder();
+    try (ScmClient scmClient = scmOption.createScmClient(conf, holder)) {
+      if (allNodes) {
+        executeForAllNodes(scmClient, holder);
+      } else if (StringUtils.isNotEmpty(scmAddress)) {
+        executeForSpecificNode(scmClient, holder, scmAddress);
+      } else {
+        executeForSingleNode(scmClient, holder);
+      }
     }
+    return null;
   }
 
-  private void executeForSingleNode(ScmClient scmClient) throws IOException {
+  private void executeForSingleNode(ScmClient scmClient, NodeIdHolder holder) throws IOException {
     boolean inSafeMode;
     Map<String, Pair<Boolean, String>> rules = null;
-    String leaderNodeId;
 
     // If SCM HA mode, query the leader node.
     if (serviceId != null) {
-      leaderNodeId = findLeaderNodeId(scmClient);
+      String leaderNodeId = findLeaderNodeId(scmClient);
       if (leaderNodeId == null) {
         throw new IOException("Unable to determine SCM leader for the service " + serviceId);
       }
       System.out.printf("SCM node %s%n", leaderNodeId);
-      inSafeMode = scmClient.inSafeModeForNode(leaderNodeId);
+      holder.setNodeId(leaderNodeId);
+      inSafeMode = scmClient.inSafeMode();
       if (isVerbose()) {
-        rules = scmClient.getSafeModeRuleStatusesForNode(leaderNodeId);
+        rules = scmClient.getSafeModeRuleStatuses();
       }
     } else {
       // Non-HA mode
@@ -136,9 +146,9 @@ public class SafeModeCheckSubcommand extends ScmSubcommand {
     }
   }
 
-  private void executeForSpecificNode(ScmClient scmClient, String scmAddress) throws IOException {
+  private void executeForSpecificNode(ScmClient scmClient, NodeIdHolder holder, String scmAddress) throws IOException {
     if (serviceId == null) {
-      executeForSingleNode(scmClient);
+      executeForSingleNode(scmClient, holder);
       return;
     }
 
@@ -156,27 +166,30 @@ public class SafeModeCheckSubcommand extends ScmSubcommand {
               .collect(Collectors.joining(", ")));
     }
     
-    queryNode(scmClient, matchedNodes.get(0));
+    queryNode(scmClient, holder, matchedNodes.get(0));
   }
 
-  private void executeForAllNodes(ScmClient scmClient) throws IOException {
+  private void executeForAllNodes(ScmClient scmClient, NodeIdHolder holder) throws IOException {
     if (serviceId == null) {
-      executeForSingleNode(scmClient);
+      executeForSingleNode(scmClient, holder);
       return;
     }
 
     System.out.println("Service ID: " + serviceId);
 
     for (SCMNodeInfo node : nodes) {
-      queryNode(scmClient, node);
+      queryNode(scmClient, holder, node);
     }
   }
 
-  private void queryNode(ScmClient scmClient, SCMNodeInfo node) {
+  private void queryNode(ScmClient scmClient, NodeIdHolder holder, SCMNodeInfo node) {
     String nodeId = node.getNodeId();
     
     try {
-      boolean inSafeMode = scmClient.inSafeModeForNode(nodeId);
+      // Set the holder to target this specific node
+      holder.setNodeId(nodeId);
+      
+      boolean inSafeMode = scmClient.inSafeMode();
 
       System.out.printf("%s [%s]: %s%n",
           node.getScmClientAddress(),
@@ -184,7 +197,7 @@ public class SafeModeCheckSubcommand extends ScmSubcommand {
           inSafeMode ? "IN SAFE MODE" : "OUT OF SAFE MODE");
 
       if (isVerbose()) {
-        Map<String, Pair<Boolean, String>> rules = scmClient.getSafeModeRuleStatusesForNode(nodeId);
+        Map<String, Pair<Boolean, String>> rules = scmClient.getSafeModeRuleStatuses();
         if (rules != null && !rules.isEmpty()) {
           printSafeModeRules(rules);
         }
