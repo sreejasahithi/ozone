@@ -33,6 +33,7 @@
     <module>dist</module>
     <module>fault-injection-test</module>
     <module>httpfsgateway</module>
+    <module>iceberg</module>
     <module>insight</module>
     <module>integration-test</module>
     <module>interface-client</module>
