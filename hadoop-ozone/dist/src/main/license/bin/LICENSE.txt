@@ -241,6 +241,7 @@ EPL 2.0
    org.glassfish.jersey.media:jersey-media-json-jackson
    org.jgrapht:jgrapht-core
    org.jgrapht:jgrapht-ext
+   org.locationtech.jts:jts-core
 
 
 CDDL 1.1 + GPLv2 with classpath exception
@@ -269,6 +270,7 @@ Apache License 2.0
    com.amazonaws:aws-java-sdk-kms
    com.amazonaws:aws-java-sdk-s3
    com.amazonaws:jmespath-java
+   com.github.ben-manes.caffeine:caffeine
    com.carrotsearch:hppc
    com.fasterxml.jackson.core:jackson-annotations
    com.fasterxml.jackson.core:jackson-core
@@ -309,6 +311,7 @@ Apache License 2.0
    commons-httpclient:commons-httpclient
    commons-io:commons-io
    commons-net:commons-net
+   commons-pool:commons-pool
    commons-validator:commons-validator
    commons-fileupload:commons-fileupload
    info.picocli:picocli
@@ -366,6 +369,7 @@ Apache License 2.0
    log4j:apache-log4j-extras
    net.java.dev.jna:jna
    net.java.dev.jna:jna-platform
+   org.apache.avro:avro
    org.apache.commons:commons-compress
    org.apache.commons:commons-configuration2
    org.apache.commons:commons-collections4
@@ -383,7 +387,18 @@ Apache License 2.0
    org.apache.hadoop:hadoop-hdfs-client
    org.apache.hadoop:hadoop-shaded-guava
    org.apache.hadoop:hadoop-shaded-protobuf_3_25
+   org.apache.httpcomponents.client5:httpclient5
+   org.apache.httpcomponents.core5:httpcore5
+   org.apache.httpcomponents.core5:httpcore5-h2
+   org.apache.httpcomponents:httpclient
    org.apache.httpcomponents:httpcore
+   org.apache.iceberg:iceberg-api
+   org.apache.iceberg:iceberg-bundled-guava
+   org.apache.iceberg:iceberg-common
+   org.apache.iceberg:iceberg-core
+   org.apache.iceberg:iceberg-data
+   org.apache.iceberg:iceberg-orc
+   org.apache.iceberg:iceberg-parquet
    org.apache.kerby:kerb-admin
    org.apache.kerby:kerb-client
    org.apache.kerby:kerb-common
@@ -401,6 +416,16 @@ Apache License 2.0
    org.apache.kerby:token-provider
    org.apache.logging.log4j:log4j-api
    org.apache.logging.log4j:log4j-core
+   org.apache.orc:orc-core
+   org.apache.orc:orc-shims
+   org.apache.parquet:parquet-avro
+   org.apache.parquet:parquet-column
+   org.apache.parquet:parquet-common
+   org.apache.parquet:parquet-encoding
+   org.apache.parquet:parquet-format-structures
+   org.apache.parquet:parquet-hadoop
+   org.apache.parquet:parquet-jackson
+   org.apache.parquet:parquet-variant
    org.apache.ranger:ranger-audit-core
    org.apache.ranger:ranger-authz-api
    org.apache.ranger:ranger-intg
@@ -439,6 +464,7 @@ Apache License 2.0
    org.jooq:jooq-codegen
    org.jooq:jooq-meta
    org.jspecify:jspecify
+   org.roaringbitmap:RoaringBitmap
    org.rocksdb:rocksdbjni
    org.springframework:spring-beans
    org.springframework:spring-core
@@ -458,6 +484,7 @@ MIT
    org.bouncycastle:bcprov-jdk18on
    org.bouncycastle:bcutil-jdk18on
    org.codehaus.mojo:animal-sniffer-annotations
+   org.checkerframework:checker-qual
    org.slf4j:jcl-over-slf4j
    org.slf4j:slf4j-api
    org.slf4j:slf4j-reload4j
@@ -491,6 +518,7 @@ BSD 2-Clause
    com.github.luben:zstd-jni
    dnsjava:dnsjava
    org.codehaus.woodstox:stax2-api
+   org.threeten:threeten-extra
 
 
 WTFPL
