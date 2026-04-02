@@ -62,6 +62,18 @@
       </exclusions>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <version>3.4.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.avro</groupId>
+          <artifactId>avro</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
     <!-- Iceberg dependencies -->
     <dependency>
       <groupId>org.apache.iceberg</groupId>
@@ -100,6 +112,12 @@
       <artifactId>orc-core</artifactId>
       <version>1.9.7</version>
       <classifier>nohive</classifier>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-client-api</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.ozone</groupId>
@@ -150,6 +168,7 @@
             <ignoredUnusedDeclaredDependency>org.apache.iceberg:iceberg-common</ignoredUnusedDeclaredDependency>
             <ignoredUnusedDeclaredDependency>org.slf4j:slf4j-api</ignoredUnusedDeclaredDependency>
             <ignoredUnusedDeclaredDependency>org.apache.parquet:parquet-column</ignoredUnusedDeclaredDependency>
+            <ignoredUnusedDeclaredDependency>org.apache.hadoop:hadoop-mapreduce-client-core</ignoredUnusedDeclaredDependency>
           </ignoredUnusedDeclaredDependencies>
         </configuration>
       </plugin>
