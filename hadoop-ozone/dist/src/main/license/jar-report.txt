@@ -12,7 +12,6 @@ share/ozone/lib/asm.jar
 share/ozone/lib/asm-tree.jar
 share/ozone/lib/asm-util.jar
 share/ozone/lib/aspectjrt.jar
-share/ozone/lib/avro.jar
 share/ozone/lib/aws-java-sdk-core.jar
 share/ozone/lib/aws-java-sdk-kms.jar
 share/ozone/lib/aws-java-sdk-s3.jar
@@ -93,10 +92,7 @@ share/ozone/lib/httpcore.jar
 share/ozone/lib/httpcore5-h2.jar
 share/ozone/lib/httpcore5.jar
 share/ozone/lib/iceberg-api.jar
-share/ozone/lib/iceberg-bundled-guava.jar
-share/ozone/lib/iceberg-common.jar
 share/ozone/lib/iceberg-core.jar
-share/ozone/lib/iceberg-data.jar
 share/ozone/lib/iceberg-orc.jar
 share/ozone/lib/iceberg-parquet.jar
 share/ozone/lib/istack-commons-runtime.jar
@@ -253,7 +249,6 @@ share/ozone/lib/ozone-s3-secret-store.jar
 share/ozone/lib/ozone-s3gateway.jar
 share/ozone/lib/ozone-tools.jar
 share/ozone/lib/ozone-vapor.jar
-share/ozone/lib/parquet-avro.jar
 share/ozone/lib/parquet-column.jar
 share/ozone/lib/parquet-common.jar
 share/ozone/lib/parquet-encoding.jar

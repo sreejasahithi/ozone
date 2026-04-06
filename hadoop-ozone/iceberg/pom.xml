@@ -44,23 +44,24 @@
       <artifactId>picocli</artifactId>
     </dependency>
 
-    <dependency>
-      <groupId>org.apache.avro</groupId>
-      <artifactId>avro</artifactId>
-      <version>1.12.0</version>
-    </dependency>
+    <!-- not needed as it comes from iceberg-core -->
+    <!--    <dependency>-->
+    <!--      <groupId>org.apache.avro</groupId>-->
+    <!--      <artifactId>avro</artifactId>-->
+    <!--      <version>1.12.0</version>-->
+    <!--    </dependency>-->
 
     <!-- Hadoop and Ozone dependencies -->
-    <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-common</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>org.apache.avro</groupId>
-          <artifactId>avro</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
+    <!--    <dependency>-->
+    <!--      <groupId>org.apache.hadoop</groupId>-->
+    <!--      <artifactId>hadoop-common</artifactId>-->
+    <!--      <exclusions>-->
+    <!--        <exclusion>-->
+    <!--          <groupId>org.apache.avro</groupId>-->
+    <!--          <artifactId>avro</artifactId>-->
+    <!--        </exclusion>-->
+    <!--      </exclusions>-->
+    <!--    </dependency>-->
 
     <dependency>
       <groupId>org.apache.hadoop</groupId>
@@ -80,21 +81,22 @@
       <artifactId>iceberg-api</artifactId>
       <version>${iceberg.version}</version>
     </dependency>
-    <dependency>
-      <groupId>org.apache.iceberg</groupId>
-      <artifactId>iceberg-common</artifactId>
-      <version>${iceberg.version}</version>
-    </dependency>
+    <!-- not needed as it comes from iceberg-core -->
+    <!--    <dependency>-->
+    <!--      <groupId>org.apache.iceberg</groupId>-->
+    <!--      <artifactId>iceberg-common</artifactId>-->
+    <!--      <version>${iceberg.version}</version>-->
+    <!--    </dependency>-->
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-core</artifactId>
       <version>${iceberg.version}</version>
     </dependency>
-    <dependency>
-      <groupId>org.apache.iceberg</groupId>
-      <artifactId>iceberg-data</artifactId>
-      <version>${iceberg.version}</version>
-    </dependency>
+    <!--    <dependency>-->
+    <!--      <groupId>org.apache.iceberg</groupId>-->
+    <!--      <artifactId>iceberg-data</artifactId>-->
+    <!--      <version>${iceberg.version}</version>-->
+    <!--    </dependency>-->
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-orc</artifactId>
@@ -130,10 +132,10 @@
     </dependency>
 
     <!-- Logging -->
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-    </dependency>
+    <!--    <dependency>-->
+    <!--      <groupId>org.slf4j</groupId>-->
+    <!--      <artifactId>slf4j-api</artifactId>-->
+    <!--    </dependency>-->
 
     <!-- Runtime dependencies for Ozone filesystem -->
     <dependency>
@@ -148,13 +150,13 @@
     </dependency>
 
     <!-- Test dependencies -->
-    <dependency>
-      <groupId>org.apache.ozone</groupId>
-      <artifactId>hdds-test-utils</artifactId>
-      <version>${hdds.version}</version>
-      <type>test-jar</type>
-      <scope>test</scope>
-    </dependency>
+    <!--    <dependency>-->
+    <!--      <groupId>org.apache.ozone</groupId>-->
+    <!--      <artifactId>hdds-test-utils</artifactId>-->
+    <!--      <version>${hdds.version}</version>-->
+    <!--      <type>test-jar</type>-->
+    <!--      <scope>test</scope>-->
+    <!--    </dependency>-->
   </dependencies>
 
   <build>
@@ -164,9 +166,9 @@
         <artifactId>maven-dependency-plugin</artifactId>
         <configuration>
           <ignoredUnusedDeclaredDependencies>
-            <ignoredUnusedDeclaredDependency>org.apache.iceberg:iceberg-data</ignoredUnusedDeclaredDependency>
-            <ignoredUnusedDeclaredDependency>org.apache.iceberg:iceberg-common</ignoredUnusedDeclaredDependency>
-            <ignoredUnusedDeclaredDependency>org.slf4j:slf4j-api</ignoredUnusedDeclaredDependency>
+            <!--            <ignoredUnusedDeclaredDependency>org.apache.iceberg:iceberg-data</ignoredUnusedDeclaredDependency>-->
+            <!--            <ignoredUnusedDeclaredDependency>org.apache.iceberg:iceberg-common</ignoredUnusedDeclaredDependency>-->
+            <!--            <ignoredUnusedDeclaredDependency>org.slf4j:slf4j-api</ignoredUnusedDeclaredDependency>-->
             <ignoredUnusedDeclaredDependency>org.apache.parquet:parquet-column</ignoredUnusedDeclaredDependency>
             <ignoredUnusedDeclaredDependency>org.apache.hadoop:hadoop-mapreduce-client-core</ignoredUnusedDeclaredDependency>
           </ignoredUnusedDeclaredDependencies>

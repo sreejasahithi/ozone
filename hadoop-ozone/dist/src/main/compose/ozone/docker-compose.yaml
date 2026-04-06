@@ -47,6 +47,10 @@ services:
       - 9874:9874
       - 9862:9862
     command: ["ozone","om"]
+    networks:
+      default:
+        aliases:
+          - ozone-om
   scm:
     <<: *common-config
     ports:
