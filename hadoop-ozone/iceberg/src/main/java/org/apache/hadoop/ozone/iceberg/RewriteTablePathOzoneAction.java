@@ -22,6 +22,9 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.HashSet;
+import java.util.Set;
+import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.RewriteTablePathUtil;
 import org.apache.iceberg.Table;
@@ -29,6 +32,21 @@ import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableMetadata.MetadataLogEntry;
 import org.apache.iceberg.actions.ImmutableRewriteTablePath;
 import org.apache.iceberg.actions.RewriteTablePath;
+
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import org.apache.iceberg.RewriteTablePathUtil.RewriteResult;
+import org.apache.iceberg.Snapshot;
+import org.apache.iceberg.StaticTableOperations;
+import org.apache.iceberg.StatisticsFile;
+import org.apache.iceberg.TableMetadataParser;
+import org.apache.iceberg.exceptions.RuntimeIOException;
+import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.OutputFile;
+import org.apache.iceberg.util.Pair;
 
 public class RewriteTablePathOzoneAction implements RewriteTablePath {
 
@@ -173,8 +191,116 @@ public class RewriteTablePathOzoneAction implements RewriteTablePath {
   }
 
   private String rebuildMetadata() {
-    //TODO need to implement rewrite of metadata files , manifest list , manifest files and position delete files.
-    return null;
+    //TODO need to implement rewrite of manifest list , manifest files and position delete files.
+    TableMetadata startMetadata =
+        startVersionName != null
+            ? ((HasTableOperations) newStaticTable(startVersionName, table.io()))
+            .operations()
+            .current()
+            : null;
+    TableMetadata endMetadata =
+        ((HasTableOperations) newStaticTable(endVersionName, table.io())).operations().current();
+
+    if (endMetadata.partitionStatisticsFiles() != null
+        && !endMetadata.partitionStatisticsFiles().isEmpty()) {
+      throw new IllegalArgumentException("Partition statistics files are not supported yet.");
+    }
+
+    RewriteResult<Snapshot> rewriteVersionResult = rewriteVersionFiles(endMetadata);
+
+    Set<Pair<String, String>> copyPlan = new HashSet<>();
+    copyPlan.addAll(rewriteVersionResult.copyPlan());
+
+    return saveFileList(copyPlan);
+    //return null;
+  }
+
+  private String saveFileList(Set<Pair<String, String>> filesToMove) {
+    String fileListPath = stagingDir + RESULT_LOCATION;
+    OutputFile fileList = table.io().newOutputFile(fileListPath);
+    writeAsCsv(filesToMove, fileList);
+    return fileListPath;
+  }
+
+  private void writeAsCsv(Set<Pair<String, String>> rows, OutputFile outputFile) {
+    try (BufferedWriter writer =
+             new BufferedWriter(
+                 new OutputStreamWriter(outputFile.createOrOverwrite(), StandardCharsets.UTF_8))) {
+      for (Pair<String, String> pair : rows) {
+        writer.write(String.join(",", pair.first(), pair.second()));
+        writer.newLine();
+      }
+    } catch (IOException e) {
+      throw new RuntimeIOException(e);
+    }
+  }
+
+  private RewriteResult<Snapshot> rewriteVersionFiles(TableMetadata endMetadata) {
+    RewriteResult<Snapshot> result = new RewriteResult<>();
+    result.toRewrite().addAll(endMetadata.snapshots());
+    result.copyPlan().addAll(rewriteVersionFile(endMetadata, endVersionName));
+
+    List<MetadataLogEntry> versions = endMetadata.previousFiles();
+    for (int i = versions.size() - 1; i >= 0; i--) {
+      String versionFilePath = versions.get(i).file();
+      if (versionFilePath.equals(startVersionName)) {
+        break;
+      }
+
+      if (!fileExist(versionFilePath)){
+        throw new IllegalArgumentException(String.format("Version file %s doesn't exist", versionFilePath));
+      }
+
+      TableMetadata tableMetadata =
+          new StaticTableOperations(versionFilePath, table.io()).current();
+
+      result.toRewrite().addAll(tableMetadata.snapshots());
+      result.copyPlan().addAll(rewriteVersionFile(tableMetadata, versionFilePath));
+    }
+
+    return result;
+  }
+
+  private Set<Pair<String, String>> rewriteVersionFile(
+      TableMetadata metadata, String versionFilePath) {
+    Set<Pair<String, String>> result = new HashSet<>();
+    String stagingPath =
+        RewriteTablePathUtil.stagingPath(versionFilePath, sourcePrefix, stagingDir);
+    System.out.println("Processing version file " + versionFilePath);
+    TableMetadata newTableMetadata =
+        RewriteTablePathUtil.replacePaths(metadata, sourcePrefix, targetPrefix);
+    TableMetadataParser.overwrite(newTableMetadata, table.io().newOutputFile(stagingPath));
+    result.add(
+        Pair.of(
+            stagingPath,
+            RewriteTablePathUtil.newPath(versionFilePath, sourcePrefix, targetPrefix)));
+
+    result.addAll(
+        statsFileCopyPlan(metadata.statisticsFiles(), newTableMetadata.statisticsFiles()));
+
+    return result;
+  }
+
+  private Set<Pair<String, String>> statsFileCopyPlan(
+      List<StatisticsFile> beforeStats, List<StatisticsFile> afterStats) {
+    Set<Pair<String, String>> result = new HashSet<>();
+    if (beforeStats.isEmpty()) {
+      return result;
+    }
+
+    if (beforeStats.size() != afterStats.size()){
+      throw new IllegalArgumentException("Before and after path rewrite, statistic files count should be same");
+    }
+
+    for (int i = 0; i < beforeStats.size(); i++) {
+      StatisticsFile before = beforeStats.get(i);
+      StatisticsFile after = afterStats.get(i);
+      if (before.fileSizeInBytes() != after.fileSizeInBytes()){
+        throw new IllegalArgumentException("Before and after path rewrite, statistic files count should be same");
+      }
+      result.add(Pair.of(before.path(), after.path()));
+    }
+    return result;
   }
 
   private boolean fileExist(String path) {
@@ -205,5 +331,10 @@ public class RewriteTablePathOzoneAction implements RewriteTablePath {
     if (value.trim().isEmpty()) {
       throw new IllegalArgumentException(message);
     }
+  }
+
+  private Table newStaticTable(String metadataFileLocation, FileIO io) {
+    StaticTableOperations ops = new StaticTableOperations(metadataFileLocation, io);
+    return new BaseTable(ops, metadataFileLocation);
   }
 }
