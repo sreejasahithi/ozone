@@ -64,6 +64,7 @@ share/ozone/lib/hadoop-auth.jar
 share/ozone/lib/hadoop-common.jar
 share/ozone/lib/hadoop-hdfs-client.jar
 share/ozone/lib/hadoop-hdfs.jar
+share/ozone/lib/hadoop-mapreduce-client-core.jar
 share/ozone/lib/hadoop-shaded-guava.jar
 share/ozone/lib/hadoop-shaded-protobuf_3_25.jar
 share/ozone/lib/hdds-cli-common.jar
@@ -246,6 +247,7 @@ share/ozone/lib/ozone-s3-secret-store.jar
 share/ozone/lib/ozone-s3gateway.jar
 share/ozone/lib/ozone-tools.jar
 share/ozone/lib/ozone-vapor.jar
+share/ozone/lib/parquet-avro.jar
 share/ozone/lib/parquet-column.jar
 share/ozone/lib/parquet-common.jar
 share/ozone/lib/parquet-encoding.jar

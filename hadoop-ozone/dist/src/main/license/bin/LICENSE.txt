@@ -384,6 +384,7 @@ Apache License 2.0
    org.apache.hadoop:hadoop-common
    org.apache.hadoop:hadoop-hdfs
    org.apache.hadoop:hadoop-hdfs-client
+   org.apache.hadoop:hadoop-mapreduce-client-core
    org.apache.hadoop:hadoop-shaded-guava
    org.apache.hadoop:hadoop-shaded-protobuf_3_25
    org.apache.httpcomponents:httpcore
@@ -412,6 +413,7 @@ Apache License 2.0
    org.apache.logging.log4j:log4j-core
    org.apache.orc:orc-core
    org.apache.orc:orc-shims
+   org.apache.parquet:parquet-avro
    org.apache.parquet:parquet-column
    org.apache.parquet:parquet-common
    org.apache.parquet:parquet-encoding
