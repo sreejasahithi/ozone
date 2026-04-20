@@ -241,6 +241,7 @@ EPL 2.0
    org.glassfish.jersey.media:jersey-media-json-jackson
    org.jgrapht:jgrapht-core
    org.jgrapht:jgrapht-ext
+   org.locationtech.jts:jts-core
 
 
 CDDL 1.1 + GPLv2 with classpath exception
@@ -269,6 +270,7 @@ Apache License 2.0
    com.amazonaws:aws-java-sdk-kms
    com.amazonaws:aws-java-sdk-s3
    com.amazonaws:jmespath-java
+   com.github.ben-manes.caffeine:caffeine
    com.carrotsearch:hppc
    com.fasterxml.jackson.core:jackson-annotations
    com.fasterxml.jackson.core:jackson-core
@@ -280,7 +282,6 @@ Apache License 2.0
    com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider
    com.fasterxml.jackson.module:jackson-module-jaxb-annotations
    com.fasterxml.woodstox:woodstox-core
-   com.github.ben-manes.caffeine:caffeine
    com.github.jnr:jnr-a64asm
    com.github.jnr:jnr-constants
    com.github.jnr:jnr-ffi
@@ -390,6 +391,8 @@ Apache License 2.0
    org.apache.iceberg:iceberg-bundled-guava
    org.apache.iceberg:iceberg-common
    org.apache.iceberg:iceberg-core
+   org.apache.iceberg:iceberg-orc
+   org.apache.iceberg:iceberg-parquet
    org.apache.kerby:kerb-admin
    org.apache.kerby:kerb-client
    org.apache.kerby:kerb-common
@@ -407,6 +410,15 @@ Apache License 2.0
    org.apache.kerby:token-provider
    org.apache.logging.log4j:log4j-api
    org.apache.logging.log4j:log4j-core
+   org.apache.orc:orc-core
+   org.apache.orc:orc-shims
+   org.apache.parquet:parquet-column
+   org.apache.parquet:parquet-common
+   org.apache.parquet:parquet-encoding
+   org.apache.parquet:parquet-format-structures
+   org.apache.parquet:parquet-hadoop
+   org.apache.parquet:parquet-jackson
+   org.apache.parquet:parquet-variant
    org.apache.ranger:ranger-audit-core
    org.apache.ranger:ranger-authz-api
    org.apache.ranger:ranger-intg
