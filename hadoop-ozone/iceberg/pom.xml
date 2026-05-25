@@ -26,26 +26,46 @@
   <description>Apache Ozone Iceberg Integration</description>
 
   <properties>
-    <classpath.skip>false</classpath.skip>
+    <classpath.skip>true</classpath.skip>
     <!-- Iceberg 1.10+ API is Java 11 bytecode, override parent Java 8 default. -->
     <maven.compiler.release>11</maven.compiler.release>
   </properties>
 
+  <!-- Shaded into ozone-iceberg.jar; optional so dist does not copy loose transitive jars. -->
   <dependencies>
+    <dependency>
+      <groupId>info.picocli</groupId>
+      <artifactId>picocli</artifactId>
+      <optional>true</optional>
+    </dependency>
     <dependency>
       <groupId>org.apache.avro</groupId>
       <artifactId>avro</artifactId>
       <version>1.12.0</version>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <optional>true</optional>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.avro</groupId>
+          <artifactId>avro</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <!-- Iceberg dependencies -->
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-api</artifactId>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-core</artifactId>
+      <optional>true</optional>
       <exclusions>
         <exclusion>
           <groupId>org.apache.httpcomponents.client5</groupId>
@@ -73,11 +93,13 @@
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-orc</artifactId>
       <version>${iceberg.version}</version>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-parquet</artifactId>
       <version>${iceberg.version}</version>
+      <optional>true</optional>
       <exclusions>
         <exclusion>
           <groupId>commons-pool</groupId>
@@ -90,6 +112,7 @@
       <artifactId>orc-core</artifactId>
       <version>1.9.7</version>
       <classifier>nohive</classifier>
+      <optional>true</optional>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -102,20 +125,28 @@
       </exclusions>
     </dependency>
     <dependency>
+      <groupId>org.apache.ozone</groupId>
+      <artifactId>hdds-common</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-column</artifactId>
       <version>1.16.0</version>
+      <optional>true</optional>
     </dependency>
 
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-mapreduce-client-core</artifactId>
       <version>${hadoop.version}</version>
       <scope>runtime</scope>
+      <optional>true</optional>
       <exclusions>
         <exclusion>
           <groupId>com.github.pjfanning</groupId>
@@ -175,15 +206,10 @@
       </exclusions>
     </dependency>
     <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-common</artifactId>
-      <scope>test</scope>
-      <exclusions>
-        <exclusion>
-          <groupId>org.apache.avro</groupId>
-          <artifactId>avro</artifactId>
-        </exclusion>
-      </exclusions>
+      <groupId>org.apache.ozone</groupId>
+      <artifactId>ozone-filesystem</artifactId>
+      <scope>runtime</scope>
+      <optional>true</optional>
     </dependency>
   </dependencies>
 
@@ -204,6 +230,55 @@
           <fork>true</fork>
           <maxHeap>2048</maxHeap>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>create-classpath-descriptor</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>prepare-package</phase>
+            <configuration>
+              <target>
+                <echo file="${project.build.outputDirectory}/ozone-iceberg.classpath">classpath=</echo>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.apache.hadoop.ozone.iceberg.RewriteTablePathCommand</mainClass>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
