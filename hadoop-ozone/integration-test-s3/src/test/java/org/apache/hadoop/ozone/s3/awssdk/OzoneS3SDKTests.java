@@ -22,6 +22,7 @@ import org.apache.hadoop.ozone.s3.MultiS3GatewayService;
 import org.apache.hadoop.ozone.s3.awssdk.v1.AbstractS3SDKV1Tests;
 import org.apache.hadoop.ozone.s3.awssdk.v2.AbstractS3SDKV2Tests;
 import org.apache.ozone.test.ClusterForTests;
+import org.apache.ozone.test.S3AuthTestUtils;
 import org.junit.jupiter.api.Nested;
 
 abstract class OzoneS3SDKTests extends ClusterForTests<MiniOzoneCluster> {
@@ -31,6 +32,11 @@ abstract class OzoneS3SDKTests extends ClusterForTests<MiniOzoneCluster> {
     return newClusterBuilder()
         .addService(new MultiS3GatewayService(5))
         .build();
+  }
+
+  @Override
+  protected void onClusterReady() throws Exception {
+    S3AuthTestUtils.storeDefaultCredentials(getCluster());
   }
 
   @Nested

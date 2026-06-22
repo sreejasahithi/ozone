@@ -17,14 +17,17 @@
 
 package org.apache.hadoop.ozone.security;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.INVALID_TOKEN;
 import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMTokenProto.Type.S3AUTHINFO;
 
 import com.google.protobuf.ServiceException;
+import java.io.IOException;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.ozone.om.OzoneManager;
+import org.apache.hadoop.ozone.om.S3SecretManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMLeaderNotReadyException;
 import org.apache.hadoop.ozone.om.exceptions.OMNotLeaderException;
@@ -32,6 +35,8 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMReque
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.S3Authentication;
 import org.apache.hadoop.ozone.protocolPB.OzoneManagerProtocolServerSideTranslatorPB;
 import org.apache.hadoop.security.token.SecretManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility class which holds methods required for parse/validation of
@@ -40,6 +45,8 @@ import org.apache.hadoop.security.token.SecretManager;
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
 public final class S3SecurityUtil {
+
+  private static final Logger LOG = LoggerFactory.getLogger(S3SecurityUtil.class);
 
   private S3SecurityUtil() {
   }
@@ -53,27 +60,73 @@ public final class S3SecurityUtil {
    */
   public static void validateS3Credential(OMRequest omRequest,
       OzoneManager ozoneManager) throws ServiceException, OMException {
-    if (ozoneManager.isSecurityEnabled()) {
-      OzoneTokenIdentifier s3Token = constructS3Token(omRequest);
-      try {
+    OzoneTokenIdentifier s3Token = constructS3Token(omRequest);
+    try {
+      if (ozoneManager.isSecurityEnabled()) {
         // authenticate user with signature verification through
         // delegationTokenMgr validateToken via retrievePassword
         ozoneManager.getDelegationTokenMgr().retrievePassword(s3Token);
-      } catch (SecretManager.InvalidToken e) {
-        if (e.getCause() != null &&
-            (e.getCause().getClass() == OMNotLeaderException.class ||
-            e.getCause().getClass() == OMLeaderNotReadyException.class)) {
-          throw new ServiceException(e.getCause());
-        }
-
-        // TODO: Just check are we okay to log entire token in failure case.
-        OzoneManagerProtocolServerSideTranslatorPB.getLog().error(
-            "signatures do NOT match for S3 identifier:{}", s3Token, e);
-        throw new OMException("User " + s3Token.getAwsAccessId()
-            + " request authorization failure: signatures do NOT match",
-            INVALID_TOKEN);
+      } else {
+        ozoneManager.checkLeaderStatus();
+        validateS3AuthInfo(s3Token, ozoneManager.getS3SecretManager());
       }
+    } catch (OMNotLeaderException | OMLeaderNotReadyException e) {
+      throw new ServiceException(e);
+    } catch (SecretManager.InvalidToken e) {
+      if (e.getCause() != null &&
+          (e.getCause().getClass() == OMNotLeaderException.class ||
+          e.getCause().getClass() == OMLeaderNotReadyException.class)) {
+        throw new ServiceException(e.getCause());
+      }
+
+      // TODO: Just check are we okay to log entire token in failure case.
+      OzoneManagerProtocolServerSideTranslatorPB.getLog().error(
+          "signatures do NOT match for S3 identifier:{}", s3Token, e);
+      throw new OMException("User " + s3Token.getAwsAccessId()
+          + " request authorization failure: signatures do NOT match",
+          INVALID_TOKEN);
     }
+  }
+
+  /**
+   * Validates if a S3 identifier is valid or not.
+   */
+  static byte[] validateS3AuthInfo(OzoneTokenIdentifier identifier,
+      S3SecretManager s3SecretManager) throws SecretManager.InvalidToken {
+    LOG.trace("Validating S3AuthInfo for identifier:{}", identifier);
+    if (identifier.getOwner() == null) {
+      throw new SecretManager.InvalidToken(
+          "Owner is missing from the S3 auth token");
+    }
+    if (!identifier.getOwner().toString().equals(identifier.getAwsAccessId())) {
+      LOG.error(
+          "Owner and AWSAccessId is different in the S3 token. Possible "
+              + " security attack: {}",
+          identifier);
+      throw new SecretManager.InvalidToken(
+          "Invalid S3 identifier: owner=" + identifier.getOwner()
+              + ", awsAccessId=" + identifier.getAwsAccessId());
+    }
+    String awsSecret;
+    try {
+      awsSecret = s3SecretManager.getSecretString(identifier.getAwsAccessId());
+    } catch (IOException e) {
+      LOG.warn("S3 identifier validation failed:{}", identifier, e);
+      throw new SecretManager.InvalidToken("No S3 secret found for S3 identifier:"
+          + identifier);
+    }
+
+    if (awsSecret == null) {
+      throw new SecretManager.InvalidToken("No S3 secret found for S3 identifier:"
+          + identifier);
+    }
+
+    if (AWSV4AuthValidator.validateRequest(identifier.getStrToSign(),
+        identifier.getSignature(), awsSecret)) {
+      return identifier.getSignature().getBytes(UTF_8);
+    }
+    throw new SecretManager.InvalidToken("Invalid S3 identifier:"
+        + identifier);
   }
 
   /**

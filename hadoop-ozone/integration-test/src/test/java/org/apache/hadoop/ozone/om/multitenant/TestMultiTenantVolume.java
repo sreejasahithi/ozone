@@ -46,11 +46,11 @@ import org.apache.hadoop.ozone.om.OMStorage;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.protocol.OzoneManagerProtocol;
-import org.apache.hadoop.ozone.om.protocol.S3Auth;
 import org.apache.hadoop.ozone.om.upgrade.OMLayoutFeature;
 import org.apache.hadoop.ozone.upgrade.UpgradeFinalization;
 import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.LambdaTestUtils.VoidCallable;
+import org.apache.ozone.test.S3AuthTestUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -247,12 +247,12 @@ public class TestMultiTenantVolume {
     // Cluster provider will modify our provided configuration. We must use
     // this version to build the client.
     OzoneConfiguration conf = cluster.getOzoneManager().getConfiguration();
+    S3AuthTestUtils.storeTestS3Secret(cluster, accessID);
     // Manually construct an object store instead of using the cluster
     // provided one so we can specify the access ID.
     RpcClient rpcClient = new RpcClient(conf, null);
     // userPrincipal is set to be the same as accessId for the test
-    rpcClient.setThreadLocalS3Auth(
-        new S3Auth("unused1", "unused2", accessID, accessID));
+    rpcClient.setThreadLocalS3Auth(S3AuthTestUtils.createValidS3Auth(accessID));
     return new ObjectStore(conf, rpcClient);
   }
 

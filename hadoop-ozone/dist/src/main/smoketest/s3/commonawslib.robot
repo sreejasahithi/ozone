@@ -78,7 +78,7 @@ Setup v4 headers
     Get Security Enabled From Config
     Run Keyword if      '${SECURITY_ENABLED}' == 'true'     Kinit test user    testuser    testuser.keytab
     Run Keyword if      '${SECURITY_ENABLED}' == 'true'     Setup secure v4 headers
-    Run Keyword if      '${SECURITY_ENABLED}' == 'false'    Setup dummy credentials for S3
+    Run Keyword if      '${SECURITY_ENABLED}' == 'false'    Setup unsecure v4 headers
 
 Setup secure v4 headers
     ${result} =         Execute and Ignore error             ozone s3 getsecret ${OM_HA_PARAM}
@@ -90,6 +90,26 @@ Setup secure v4 headers
 
     ${accessKey} =      Get Regexp Matches         ${result}     (?<=awsAccessKey=).*
     # Use a valid user that are created in the Docket image Ex: testuser if it is not a secure cluster
+    ${accessKey} =      Get Variable Value         ${accessKey}  testuser
+    ${secret} =         Get Regexp Matches         ${result}     (?<=awsSecret=).*
+    ${accessKey} =      Set Variable               ${accessKey[0]}
+    ${secret} =         Set Variable               ${secret[0]}
+                        Execute                    aws configure set default.s3.signature_version s3v4
+                        Execute                    aws configure set aws_access_key_id ${accessKey}
+                        Execute                    aws configure set aws_secret_access_key ${secret}
+                        Execute                    aws configure set region us-west-1
+                        Execute                    aws configure set default.s3.addressing_style ${OZONE_S3_ADDRESS_STYLE}
+
+
+Setup unsecure v4 headers
+    ${result} =         Execute and Ignore error             ozone s3 getsecret ${OM_HA_PARAM}
+    ${exists} =         Run Keyword And Return Status    Should Contain    ${result}    S3_SECRET_ALREADY_EXISTS
+    IF                  ${exists}
+                        Execute    ozone s3 revokesecret -y ${OM_HA_PARAM}
+        ${result} =     Execute    ozone s3 getsecret ${OM_HA_PARAM}
+    END
+
+    ${accessKey} =      Get Regexp Matches         ${result}     (?<=awsAccessKey=).*
     ${accessKey} =      Get Variable Value         ${accessKey}  testuser
     ${secret} =         Get Regexp Matches         ${result}     (?<=awsSecret=).*
     ${accessKey} =      Set Variable               ${accessKey[0]}

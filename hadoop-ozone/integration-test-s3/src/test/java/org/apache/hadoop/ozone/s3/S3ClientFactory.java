@@ -22,6 +22,8 @@ import static org.apache.hadoop.hdds.server.http.HttpServer2.HTTPS_SCHEME;
 import static org.apache.hadoop.hdds.server.http.HttpServer2.HTTP_SCHEME;
 import static org.apache.hadoop.ozone.s3.S3GatewayConfigKeys.OZONE_S3G_HTTPS_ADDRESS_KEY;
 import static org.apache.hadoop.ozone.s3.S3GatewayConfigKeys.OZONE_S3G_HTTP_ADDRESS_KEY;
+import static org.apache.ozone.test.S3AuthTestUtils.DEFAULT_ACCESS_KEY;
+import static org.apache.ozone.test.S3AuthTestUtils.DEFAULT_SECRET_KEY;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.auth.AWSCredentialsProvider;
@@ -50,6 +52,7 @@ import software.amazon.awssdk.services.s3.S3ClientBuilder;
  */
 public class S3ClientFactory {
   private static final Logger LOG = LoggerFactory.getLogger(S3ClientFactory.class);
+
   private final OzoneConfiguration conf;
 
   /**
@@ -77,8 +80,8 @@ public class S3ClientFactory {
    * @return AmazonS3 client
    */
   public AmazonS3 createS3Client(boolean enablePathStyle) {
-    final String accessKey = "user";
-    final String secretKey = "password";
+    final String accessKey = DEFAULT_ACCESS_KEY;
+    final String secretKey = DEFAULT_SECRET_KEY;
     final Regions region = Regions.DEFAULT_REGION;
 
     final String protocol;
@@ -148,8 +151,8 @@ public class S3ClientFactory {
 
   private <T extends S3BaseClientBuilder<T, ?>> void configureCommon(T builder, boolean enablePathStyle)
       throws Exception {
-    final String accessKey = "user";
-    final String secretKey = "password";
+    final String accessKey = DEFAULT_ACCESS_KEY;
+    final String secretKey = DEFAULT_SECRET_KEY;
     final Region region = Region.US_EAST_1;
 
     final String protocol;

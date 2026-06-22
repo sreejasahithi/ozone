@@ -17,7 +17,6 @@
 
 package org.apache.hadoop.ozone.security;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.TOKEN_EXPIRED;
 import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMTokenProto.Type.S3AUTHINFO;
 
@@ -372,7 +371,7 @@ public class OzoneDelegationTokenSecretManager
     }
 
     if (identifier.getTokenType().equals(S3AUTHINFO)) {
-      return validateS3AuthInfo(identifier);
+      return S3SecurityUtil.validateS3AuthInfo(identifier, s3SecretManager);
     }
     return validateToken(identifier).getPassword();
   }
@@ -458,50 +457,6 @@ public class OzoneDelegationTokenSecretManager
       LOG.error("verifySignature with signerCert {} failed", signerCert, e);
       return false;
     }
-  }
-
-  /**
-   * Validates if a S3 identifier is valid or not.
-   * */
-  private byte[] validateS3AuthInfo(OzoneTokenIdentifier identifier)
-      throws InvalidToken {
-    LOG.trace("Validating S3AuthInfo for identifier:{}", identifier);
-    if (identifier.getOwner() == null) {
-      throw new InvalidToken(
-          "Owner is missing from the S3 auth token");
-    }
-    if (!identifier.getOwner().toString().equals(identifier.getAwsAccessId())) {
-      LOG.error(
-          "Owner and AWSAccessId is different in the S3 token. Possible "
-              + " security attack: {}",
-          identifier);
-      throw new InvalidToken(
-          "Invalid S3 identifier: owner=" + identifier.getOwner()
-              + ", awsAccessId=" + identifier.getAwsAccessId());
-    }
-    String awsSecret;
-    try {
-      awsSecret = s3SecretManager.getSecretString(identifier
-          .getAwsAccessId());
-    } catch (IOException e) {
-      LOG.warn("S3 identifier validation failed:{}",
-          identifier, e);
-      throw new InvalidToken("No S3 secret found for S3 identifier:"
-          + identifier);
-    }
-
-    if (awsSecret == null) {
-      throw new InvalidToken("No S3 secret found for S3 identifier:"
-          + identifier);
-    }
-
-    if (AWSV4AuthValidator.validateRequest(identifier.getStrToSign(),
-        identifier.getSignature(), awsSecret)) {
-      return identifier.getSignature().getBytes(UTF_8);
-    }
-    throw new InvalidToken("Invalid S3 identifier:"
-        + identifier);
-
   }
 
   /**

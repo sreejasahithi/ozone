@@ -45,7 +45,6 @@ Get bucket info with Ozone Shell to check the owner field
                         Should Be Equal     ${result}       testuser
                         # In ozonesecure(-ha) docker-config, hadoop.security.auth_to_local is set
                         # in the way that getShortUserName() converts the accessId to "testuser".
-                        # Also see "Setup dummy credentials for S3" in commonawslib.robot
 
 List buckets with empty access id
     [setup]             Save AWS access key
