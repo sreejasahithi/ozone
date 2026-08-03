@@ -25,12 +25,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.apache.iceberg.ContentFile;
@@ -320,86 +316,46 @@ public class RewriteTablePathOzoneAction implements RewriteTablePath {
   private Set<String> manifestsToRewrite(Set<Snapshot> validSnapshots, Set<Long> deltaSnapshotIds) {
 
     Set<String> manifestPaths = ConcurrentHashMap.newKeySet();
-    int maxInFlight = threads * MAX_INFLIGHT_MULTIPLIER;
-    Semaphore semaphore = new Semaphore(maxInFlight);
+    BackpressureParallelExecutor.run(
+        executorService,
+        threads * MAX_INFLIGHT_MULTIPLIER,
+        validSnapshots,
+        snapshot -> {
+          final long snapshotId = snapshot.snapshotId();
+          final String manifestListLocation = snapshot.manifestListLocation();
+          try (CloseableIterable<ManifestFile> manifests =
+                   InternalData.read(
+                           FileFormat.AVRO,
+                           table.io().newInputFile(manifestListLocation))
+                       .setRootType(GenericManifestFile.class)
+                       .setCustomType(
+                           ManifestFile.PARTITION_SUMMARIES_ELEMENT_ID,
+                           GenericPartitionFieldSummary.class)
+                       .project(ManifestFile.schema())
+                       .build()) {
 
-    ExecutorCompletionService<Void> completionService = new ExecutorCompletionService<>(executorService);
-
-    int submittedTasks = 0;
-    int completedTasks = 0;
-
-    try {
-      for (Snapshot snapshot : validSnapshots) {
-        semaphore.acquire(); // blocks when maxInFlight tasks are already in-flight
-
-        final long snapshotId = snapshot.snapshotId();
-        final String manifestListLocation = snapshot.manifestListLocation();
-
-        boolean taskSubmitted = false;
-        try {
-          completionService.submit(() -> {
-            try (CloseableIterable<ManifestFile> manifests =
-                     InternalData.read(
-                             FileFormat.AVRO,
-                             table.io().newInputFile(manifestListLocation))
-                         .setRootType(GenericManifestFile.class)
-                         .setCustomType(
-                             ManifestFile.PARTITION_SUMMARIES_ELEMENT_ID,
-                             GenericPartitionFieldSummary.class)
-                         .project(ManifestFile.schema())
-                         .build()) {
-
-              for (ManifestFile manifest : manifests) {
-                if (deltaSnapshotIds == null) {
-                  manifestPaths.add(manifest.path());
-                } else if (manifest.snapshotId() != null
-                    && deltaSnapshotIds.contains(manifest.snapshotId())) {
-                  manifestPaths.add(manifest.path());
-                }
+            for (ManifestFile manifest : manifests) {
+              if (deltaSnapshotIds == null) {
+                manifestPaths.add(manifest.path());
+              } else if (manifest.snapshotId() != null
+                  && deltaSnapshotIds.contains(manifest.snapshotId())) {
+                manifestPaths.add(manifest.path());
               }
-
-            } catch (Exception e) {
-              LOG.error("Failed to read manifests for snapshot {} at {}",
-                  snapshotId, manifestListLocation, e);
-              throw new RuntimeException(
-                  "Failed to read manifests for snapshot " + snapshotId, e);
-            } finally {
-              semaphore.release();
             }
-            return null;
-          });
-          taskSubmitted = true;
-          submittedTasks++;
-        } finally {
-          if (!taskSubmitted) {
-            semaphore.release();
+
+          } catch (Exception e) {
+            LOG.error("Failed to read manifests for snapshot {} at {}",
+                snapshotId, manifestListLocation, e);
+            throw new RuntimeException(
+                "Failed to read manifests for snapshot " + snapshotId, e);
           }
-        }
-        Future<Void> done;
-        while ((done = completionService.poll()) != null) {
-          done.get();
-          completedTasks++;
-        }
-      }
-      
-      while (completedTasks < submittedTasks) {
-        completionService.take().get();
-        completedTasks++;
-      }
-
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      executorService.shutdownNow();
-      throw new RuntimeException("Interrupted while processing manifests", e);
-
-    } catch (ExecutionException e) {
-      executorService.shutdownNow();
-      throw new RuntimeException(
-          "Failed to collect manifests to rewrite. "
-              + "The end version may contain invalid snapshots. "
-              + "Please choose an earlier version.",
-          e.getCause());
-    }
+          return null;
+        },
+        result -> { },
+        "Interrupted while processing manifests",
+        "Failed to collect manifests to rewrite. "
+            + "The end version may contain invalid snapshots. "
+            + "Please choose an earlier version.");
 
     return manifestPaths;
   }
@@ -435,56 +391,15 @@ public class RewriteTablePathOzoneAction implements RewriteTablePath {
       return new RewriteResult<>();
     }
 
-    int maxInFlight = threads * MAX_INFLIGHT_MULTIPLIER;
-    Semaphore semaphore = new Semaphore(maxInFlight);
-    ExecutorCompletionService<RewriteResult<ManifestFile>> completionService =
-        new ExecutorCompletionService<>(executorService);
-
     RewriteResult<ManifestFile> combined = new RewriteResult<>();
-    int submittedTasks = 0;
-    int completedTasks = 0;
-
-    try {
-      for (Snapshot snapshot : validSnapshots) {
-        semaphore.acquire();
-
-        boolean taskSubmitted = false;
-        try {
-          completionService.submit(() -> {
-            try {
-              return rewriteManifestList(snapshot, endMetadata, manifestsToRewrite);
-            } finally {
-              semaphore.release();
-            }
-          });
-          taskSubmitted = true;
-          submittedTasks++;
-        } finally {
-          if (!taskSubmitted) {
-            semaphore.release();
-          }
-        }
-
-        Future<RewriteResult<ManifestFile>> done;
-        while ((done = completionService.poll()) != null) {
-          combined.append(done.get());
-          completedTasks++;
-        }
-      }
-      
-      while (completedTasks < submittedTasks) {
-        combined.append(completionService.take().get());
-        completedTasks++;
-      }
-
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      executorService.shutdownNow();
-      throw new RuntimeException("Interrupted while rewriting manifest lists", e);
-    } catch (ExecutionException e) {
-      executorService.shutdownNow();
-      throw new RuntimeException("Failed to rewrite manifest list", e.getCause());
-    }
+    BackpressureParallelExecutor.run(
+        executorService,
+        threads * MAX_INFLIGHT_MULTIPLIER,
+        validSnapshots,
+        snapshot -> rewriteManifestList(snapshot, endMetadata, manifestsToRewrite),
+        combined::append,
+        "Interrupted while rewriting manifest lists",
+        "Failed to rewrite manifest list");
 
     return combined;
   }
@@ -529,63 +444,22 @@ public class RewriteTablePathOzoneAction implements RewriteTablePath {
       return new RewriteContentFileResult();
     }
 
-    int maxInFlight = threads * MAX_INFLIGHT_MULTIPLIER;
-    Semaphore semaphore = new Semaphore(maxInFlight);
-    ExecutorCompletionService<RewriteContentFileResult> completionService =
-        new ExecutorCompletionService<>(executorService);
-
     RewriteContentFileResult aggregatedResult = new RewriteContentFileResult();
-    int submittedTasks = 0;
-    int completedTasks = 0;
-
-    try {
-      for (ManifestFile manifestFile : toRewrite) {
-        semaphore.acquire();
-
-        boolean taskSubmitted = false;
-        try {
-          completionService.submit(() -> {
-            try {
-              return processManifest(
-                  manifestFile,
-                  table,
-                  deltaSnapshotIds,
-                  stagingDir,
-                  tableMetadata.formatVersion(),
-                  sourcePrefix,
-                  targetPrefix);
-            } finally {
-              semaphore.release();
-            }
-          });
-          taskSubmitted = true;
-          submittedTasks++;
-        } finally {
-          if (!taskSubmitted) {
-            semaphore.release();
-          }
-        }
-
-        Future<RewriteContentFileResult> done;
-        while ((done = completionService.poll()) != null) {
-          aggregatedResult.append(done.get());
-          completedTasks++;
-        }
-      }
-
-      while (completedTasks < submittedTasks) {
-        aggregatedResult.append(completionService.take().get());
-        completedTasks++;
-      }
-
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      executorService.shutdownNow();
-      throw new RuntimeException("Interrupted while rewriting manifests", e);
-    } catch (ExecutionException e) {
-      executorService.shutdownNow();
-      throw new RuntimeException("Failed to rewrite manifest", e.getCause());
-    }
+    BackpressureParallelExecutor.run(
+        executorService,
+        threads * MAX_INFLIGHT_MULTIPLIER,
+        toRewrite,
+        manifestFile -> processManifest(
+            manifestFile,
+            table,
+            deltaSnapshotIds,
+            stagingDir,
+            tableMetadata.formatVersion(),
+            sourcePrefix,
+            targetPrefix),
+        aggregatedResult::append,
+        "Interrupted while rewriting manifests",
+        "Failed to rewrite manifest");
 
     return aggregatedResult;
   }
@@ -729,54 +603,17 @@ public class RewriteTablePathOzoneAction implements RewriteTablePath {
     }
     
     RewriteTablePathUtil.PositionDeleteReaderWriter posDeleteReaderWriter = new OzonePositionDeleteReaderWriter();
-    int maxInFlight = threads * MAX_INFLIGHT_MULTIPLIER;
-    Semaphore semaphore = new Semaphore(maxInFlight);
-    ExecutorCompletionService<Void> completionService = new ExecutorCompletionService<>(executorService);
-    int submittedTasks = 0;
-    int completedTasks = 0;
-
-    try {
-      for (DeleteFile deleteFile : toRewrite) {
-        semaphore.acquire();
-        boolean taskSubmitted = false;
-        try {
-          completionService.submit(() -> {
-            try {
-              rewritePositionDelete(deleteFile, table, sourcePrefix, targetPrefix, stagingDir, posDeleteReaderWriter);
-              return null;
-            } finally {
-              semaphore.release();
-            }
-          });
-          taskSubmitted = true;
-          submittedTasks++;
-        } finally {
-          if (!taskSubmitted) {
-            semaphore.release();
-          }
-        }
-        
-        Future<Void> done;
-        while ((done = completionService.poll()) != null) {
-          done.get();
-          completedTasks++;
-        }
-      }
-      
-      while (completedTasks < submittedTasks) {
-        completionService.take().get();
-        completedTasks++;
-      }
-
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      executorService.shutdownNow();
-      throw new RuntimeException("Interrupted while rewriting position delete files", e);
-
-    } catch (ExecutionException e) {
-      executorService.shutdownNow();
-      throw new RuntimeException("Failed to rewrite position delete file", e.getCause());
-    }
+    BackpressureParallelExecutor.run(
+        executorService,
+        threads * MAX_INFLIGHT_MULTIPLIER,
+        toRewrite,
+        deleteFile -> {
+          rewritePositionDelete(deleteFile, table, sourcePrefix, targetPrefix, stagingDir, posDeleteReaderWriter);
+          return null;
+        },
+        result -> { },
+        "Interrupted while rewriting position delete files",
+        "Failed to rewrite position delete file");
   }
 
   private static void rewritePositionDelete(
