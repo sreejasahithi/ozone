@@ -139,7 +139,7 @@ env:
   MAVEN_ARGS: --batch-mode --settings ${{ github.workspace }}/dev-support/ci/maven-settings.xml
   MAVEN_OPTS: -Dhttp.keepAlive=false -Daether.connector.http.retryHandler.count=10
   OZONE_IMAGE: ghcr.io/apache/ozone
-  OZONE_RUNNER_IMAGE: ghcr.io/apache/ozone-runner
+  OZONE_RUNNER_IMAGE: ghcr.io/sreejasahithi/ozone-runner
   OZONE_VOLUME_OWNER: 1000
   SCRIPT: ${{ inputs.script }}
 

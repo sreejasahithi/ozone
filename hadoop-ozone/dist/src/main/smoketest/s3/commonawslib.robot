@@ -15,6 +15,7 @@
 
 *** Settings ***
 Library             Collections
+Library             DateTime
 Resource            ../commonlib.robot
 Resource            ../ozone-lib/shell.robot
 
@@ -27,37 +28,71 @@ ${BUCKET_LAYOUT}               OBJECT_STORE
 ${ENCRYPTION_KEY}              key1
 ${OZONE_S3_TESTS_SET_UP}       ${FALSE}
 ${OZONE_AWS_ACCESS_KEY_ID}     ${EMPTY}
+${S3_AWS_ACCESS_KEY_ID}        ${EMPTY}
+${S3_AWS_SECRET_ACCESS_KEY}    ${EMPTY}
 ${OZONE_S3_ADDRESS_STYLE}      path
+${AWS_CLI}                     aws
 
 *** Keywords ***
+Normalize AWS CLI service error rc
+    [Arguments]    ${expected_error_code}
+    IF    '${AWS_CLI}' == 'aws2' and '${expected_error_code}' == '255'
+        RETURN    254
+    END
+    RETURN    ${expected_error_code}
+
+Build aws s3api command
+    [Arguments]    ${command}
+    ${aws_env_prefix}=    Set Variable If    '${AWS_CLI}' == 'aws2'
+    ...    AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+    ...    ${EMPTY}
+    ${cli_cmd}=    Set Variable If    '${aws_env_prefix}' != '${EMPTY}'
+    ...    ${aws_env_prefix} ${AWS_CLI} s3api --endpoint-url ${ENDPOINT_URL} ${command}
+    ...    ${AWS_CLI} s3api --endpoint-url ${ENDPOINT_URL} ${command}
+    RETURN    ${cli_cmd}
+
 Execute AWSS3APICli
     [Arguments]       ${command}
-    ${output} =       Execute                    aws s3api --endpoint-url ${ENDPOINT_URL} ${command}
-    [return]          ${output}
+    ${cli_cmd}=       Build aws s3api command    ${command}
+    ${output} =       Execute                    ${cli_cmd}
+    RETURN            ${output}
 
 # For possible AWS CLI return codes see: https://docs.aws.amazon.com/cli/latest/topic/return-codes.html
 Execute AWSS3APICli and checkrc
     [Arguments]       ${command}                 ${expected_error_code}
-    ${output} =       Execute and checkrc        aws s3api --endpoint-url ${ENDPOINT_URL} ${command}  ${expected_error_code}
-    [return]          ${output}
+    ${expected_rc} =  Normalize AWS CLI service error rc    ${expected_error_code}
+    ${cli_cmd}=       Build aws s3api command    ${command}
+    ${output} =       Execute and checkrc        ${cli_cmd}  ${expected_rc}
+    RETURN            ${output}
 
 Execute AWSS3APICli and ignore error
     [Arguments]       ${command}
-    ${output} =       Execute And Ignore Error   aws s3api --endpoint-url ${ENDPOINT_URL} ${command}
-    [return]          ${output}
+    ${cli_cmd}=       Build aws s3api command    ${command}
+    ${output} =       Execute And Ignore Error   ${cli_cmd}
+    RETURN            ${output}
 
 Execute AWSS3Cli
     [Arguments]       ${command}
-    ${output} =       Execute                     aws s3 --endpoint-url ${ENDPOINT_URL} ${command}
-    [return]          ${output}
+    ${output} =       Execute                     ${AWS_CLI} s3 --endpoint-url ${ENDPOINT_URL} ${command}
+    RETURN            ${output}
 
 Execute AWSS3CliDebug
     [Arguments]       ${command}
-    ${output} =       Execute                     aws --debug s3 --endpoint ${ENDPOINT_URL} ${command}
-    [return]          ${output}
+    ${output} =       Execute                     ${AWS_CLI} --debug s3 --endpoint ${ENDPOINT_URL} ${command}
+    RETURN            ${output}
+
+Parse S3 LastModified
+    [Arguments]    ${lastModified}
+    ${is_iso}=    Evaluate    bool(__import__('re').match(r'^\\d{4}-\\d{2}-\\d{2}T', '''${lastModified}'''))
+    IF    ${is_iso}
+        ${lmDate}=    Evaluate    __import__('datetime').datetime.fromisoformat('''${lastModified}'''.replace('Z', '+00:00'))
+    ELSE
+        ${lmDate}=    Convert Date    ${lastModified}    date_format=%a, %d %b %Y %H:%M:%S %Z
+    END
+    RETURN    ${lmDate}
 
 Install aws cli
-    ${rc}              ${output} =                 Run And Return Rc And Output           which aws
+    ${rc}              ${output} =                 Run And Return Rc And Output           which ${AWS_CLI}
     Return From Keyword If    '${rc}' == '0'
     ${rc}              ${output} =                 Run And Return Rc And Output           which apt-get
     Run Keyword if     '${rc}' == '0'              Install aws cli s3 debian
@@ -80,6 +115,11 @@ Setup v4 headers
     Run Keyword if      '${SECURITY_ENABLED}' == 'true'     Setup secure v4 headers
     Run Keyword if      '${SECURITY_ENABLED}' == 'false'    Setup dummy credentials for S3
 
+Store S3 aws credentials
+    [Arguments]    ${accessKey}    ${secret}
+    Set Suite Variable    ${S3_AWS_ACCESS_KEY_ID}    ${accessKey}
+    Set Suite Variable    ${S3_AWS_SECRET_ACCESS_KEY}    ${secret}
+    
 Setup secure v4 headers
     ${result} =         Execute and Ignore error             ozone s3 getsecret ${OM_HA_PARAM}
     ${exists} =         Run Keyword And Return Status    Should Contain    ${result}    S3_SECRET_ALREADY_EXISTS
@@ -94,25 +134,35 @@ Setup secure v4 headers
     ${secret} =         Get Regexp Matches         ${result}     (?<=awsSecret=).*
     ${accessKey} =      Set Variable               ${accessKey[0]}
     ${secret} =         Set Variable               ${secret[0]}
-                        Execute                    aws configure set default.s3.signature_version s3v4
-                        Execute                    aws configure set aws_access_key_id ${accessKey}
-                        Execute                    aws configure set aws_secret_access_key ${secret}
-                        Execute                    aws configure set region us-west-1
-                        Execute                    aws configure set default.s3.addressing_style ${OZONE_S3_ADDRESS_STYLE}
-
+                        Execute                    ${AWS_CLI} configure set default.s3.signature_version s3v4
+                        Execute                    ${AWS_CLI} configure set aws_access_key_id ${accessKey}
+                        Execute                    ${AWS_CLI} configure set aws_secret_access_key ${secret}
+                        Execute                    ${AWS_CLI} configure set region us-west-1
+                        Execute                    ${AWS_CLI} configure set default.s3.addressing_style ${OZONE_S3_ADDRESS_STYLE}
+    Run Keyword    Store S3 aws credentials    ${accessKey}    ${secret}
 
 Setup dummy credentials for S3
-                        Execute                    aws configure set default.s3.signature_version s3v4
-                        Execute                    aws configure set aws_access_key_id dlfknslnfslf
-                        Execute                    aws configure set aws_secret_access_key dlfknslnfslf
-                        Execute                    aws configure set region us-west-1
+                        Execute                    ${AWS_CLI} configure set default.s3.signature_version s3v4
+                        Execute                    ${AWS_CLI} configure set aws_access_key_id dlfknslnfslf
+                        Execute                    ${AWS_CLI} configure set aws_secret_access_key dlfknslnfslf
+                        Execute                    ${AWS_CLI} configure set region us-west-1
+                        Execute                    ${AWS_CLI} configure set default.s3.addressing_style ${OZONE_S3_ADDRESS_STYLE}
+    Run Keyword    Store S3 aws credentials    dlfknslnfslf    dlfknslnfslf
+
+Setup aws cli v2 settings
+    Return From Keyword If    '${AWS_CLI}' != 'aws2'
+    Execute    ${AWS_CLI} configure set default.s3.addressing_style ${OZONE_S3_ADDRESS_STYLE}
+    Execute    ${AWS_CLI} configure set default.request_checksum_calculation when_required
+    Execute    ${AWS_CLI} configure set default.response_checksum_validation when_required
+    Set Environment Variable    AWS_REQUEST_CHECKSUM_CALCULATION    when_required
+    Set Environment Variable    AWS_RESPONSE_CHECKSUM_VALIDATION    when_required
 
 Save AWS access key
-    ${OZONE_AWS_ACCESS_KEY_ID} =      Execute     aws configure get aws_access_key_id
+    ${OZONE_AWS_ACCESS_KEY_ID} =      Execute     ${AWS_CLI} configure get aws_access_key_id
     Set Test Variable     ${OZONE_AWS_ACCESS_KEY_ID}
 
 Restore AWS access key
-    Execute    aws configure set aws_access_key_id ${OZONE_AWS_ACCESS_KEY_ID}
+    Execute    ${AWS_CLI} configure set aws_access_key_id ${OZONE_AWS_ACCESS_KEY_ID}
 
 Generate Ozone String
     ${randStr} =         Generate Random String     10  [NUMBERS]
@@ -136,6 +186,7 @@ Setup s3 tests
     Run Keyword        Install aws cli
     Run Keyword        Get Security Enabled From Config
     Run Keyword if    '${OZONE_S3_SET_CREDENTIALS}' == 'true'    Setup v4 headers
+    Run Keyword        Setup aws cli v2 settings
     Run Keyword if    '${BUCKET}' == 'generated'            Create generated bucket    ${BUCKET_LAYOUT}
     Run Keyword if    '${BUCKET}' == 'link'                 Setup links for S3 tests
     Run Keyword if    '${BUCKET}' == 'encrypted'            Create encrypted bucket
@@ -208,7 +259,7 @@ Revoke S3 secrets
 
 Get bucket owner
     [arguments]    ${bucket}
-    ${owner} =     Execute    aws s3api --endpoint-url ${ENDPOINT_URL} get-bucket-acl --bucket ${bucket} | jq -r .Owner.DisplayName
+    ${owner} =     Execute    ${AWS_CLI} s3api --endpoint-url ${ENDPOINT_URL} get-bucket-acl --bucket ${bucket} | jq -r .Owner.DisplayName
     [return]       ${owner}
 
 Execute AWSS3APICli using bucket ownership verification
