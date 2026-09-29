@@ -1,0 +1,117 @@
+{
+  "threshold": null,
+  "include_nodes": null,
+  "exclude_nodes": null,
+  "limit": null,
+  "minimum_drift": 10,
+  "min_eligible_datanodes": 2,
+  "min_source_nodes": 1,
+  "min_target_nodes": 1,
+  "assessment_interval": "5h",
+  "sanity_check": {
+    "prometheus_url": "http://prometheus:9090",
+    "query_timeout_seconds": 10,
+    "counter_rate_window": "5m",
+    "checks": [
+      {
+        "group": "rm",
+        "label": "under_replicated_queue_size",
+        "query": "max(replication_manager_metrics_under_replicated_queue_size)",
+        "kind": "gauge_max",
+        "threshold": 1000,
+        "description": "Containers queued for replication",
+        "relevance": "Existing replication backlog RM must clear before balancer moves"
+      },
+      {
+        "group": "rm",
+        "label": "over_replicated_queue_size",
+        "query": "max(replication_manager_metrics_over_replicated_queue_size)",
+        "kind": "gauge_max",
+        "threshold": 1000,
+        "description": "Containers queued for over-replication deletion",
+        "relevance": "Existing deletion backlog competing with balancer deletes"
+      },
+      {
+        "group": "rm",
+        "label": "inflight_replication",
+        "query": "max(replication_manager_metrics_inflight_replication)",
+        "kind": "gauge_max",
+        "threshold": 200,
+        "description": "Ratis replica-create ops currently outstanding",
+        "relevance": "Balancer moves add to this; already-high means contention"
+      },
+      {
+        "group": "rm",
+        "label": "inflight_deletion",
+        "query": "max(replication_manager_metrics_inflight_deletion)",
+        "kind": "gauge_max",
+        "threshold": 200,
+        "description": "Ratis replica-delete ops currently outstanding",
+        "relevance": "Balancer source-delete step adds to this"
+      },
+      {
+        "group": "rm",
+        "label": "replicate_container_cmds_deferred",
+        "query": "sum(increase(replication_manager_metrics_replicate_container_cmds_deferred_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Replicate commands RM could not send (source DNs saturated)",
+        "relevance": "Clearest RM+DN backpressure signal; balancer would worsen it"
+      },
+      {
+        "group": "rm",
+        "label": "delete_container_cmds_deferred",
+        "query": "sum(increase(replication_manager_metrics_delete_container_cmds_deferred_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Delete-container commands deferred (target DN saturated)",
+        "relevance": "Deletion backpressure that balancer deletes would compound"
+      },
+      {
+        "group": "rm",
+        "label": "replica_create_timeout",
+        "query": "sum(increase(replication_manager_metrics_replica_create_timeout_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Ratis replica creates that timed out",
+        "relevance": "Moves eventually time out; this means it is already happening"
+      },
+      {
+        "group": "rm",
+        "label": "replica_delete_timeout",
+        "query": "sum(increase(replication_manager_metrics_replica_delete_timeout_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Ratis replica deletes that timed out",
+        "relevance": "Deletion timeouts already occurring under current load"
+      },
+      {
+        "group": "dn",
+        "label": "in_flight_at_or_above_max_streams",
+        "query": "count(replication_supervisor_metrics_num_in_flight_replications >= on(instance) group_left() replication_supervisor_metrics_max_replication_streams) or vector(0)",
+        "kind": "gauge_max",
+        "threshold": 0,
+        "description": "Datanodes with in-flight replications at or above max replication streams",
+        "relevance": "DN replication concurrency saturated; balancer moves will be slow"
+      },
+      {
+        "group": "dn",
+        "label": "scm_replication_budget_reported",
+        "query": "max(datanode_queue_metrics_state_context_command_queue_replicate_container_command_size + datanode_queue_metrics_command_dispatcher_command_queue_replicate_container_command_size)",
+        "kind": "gauge_max",
+        "threshold": 20,
+        "description": "Max DN replicateContainerCommand queue (StateContext + CommandDispatcher)",
+        "relevance": "High values mean heavy replicate command backlog on DNs before balancer moves"
+      },
+      {
+        "group": "dn",
+        "label": "queue_delete_total",
+        "query": "max(datanode_queue_metrics_state_context_command_queue_delete_container_command_size + datanode_queue_metrics_command_dispatcher_command_queue_delete_container_command_size)",
+        "kind": "gauge_max",
+        "threshold": 40,
+        "description": "Max DN deleteContainerCommand queue (StateContext + CommandDispatcher)",
+        "relevance": "Deletion command backlog on DNs delays balancer source cleanup"
+      }
+    ]
+  }
+}

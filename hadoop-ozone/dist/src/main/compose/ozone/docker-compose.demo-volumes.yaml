@@ -1,0 +1,106 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Demo overlay: isolated 2 GB tmpfs per datanode so Container Balancer utilization
+# reflects Ozone data skew (not identical host disk stats from Docker Desktop).
+#
+# Usage (from this directory):
+#   export COMPOSE_FILE=docker-compose.yaml:monitoring.yaml:docker-compose.demo-volumes.yaml
+#   export OZONE_REPLICATION_FACTOR=3
+#   export OZONE_SAFEMODE_MIN_DATANODES=3
+#   docker compose down -v
+#   docker compose up -d --scale datanode=0
+#
+# Datanode hostnames for admin commands: datanode1 .. datanode5
+
+x-demo-datanode:
+  &demo-datanode
+  image: ${OZONE_RUNNER_IMAGE}:${OZONE_RUNNER_VERSION}
+  volumes:
+    - ../..:/opt/hadoop
+  env_file:
+    - docker-config
+    - monitoring.conf
+  ports:
+    - 19864
+    - 9882
+  environment:
+    OZONE-SITE.XML_ozone.server.default.replication: ${OZONE_REPLICATION_FACTOR:-3}
+    OZONE_OPTS:
+  command: ["ozone", "datanode"]
+
+services:
+  datanode1:
+    <<: *demo-datanode
+    hostname: datanode1
+    volumes:
+      - tmpfs1:/data
+      - ../..:/opt/hadoop
+  datanode2:
+    <<: *demo-datanode
+    hostname: datanode2
+    volumes:
+      - tmpfs2:/data
+      - ../..:/opt/hadoop
+  datanode3:
+    <<: *demo-datanode
+    hostname: datanode3
+    volumes:
+      - tmpfs3:/data
+      - ../..:/opt/hadoop
+  datanode4:
+    <<: *demo-datanode
+    hostname: datanode4
+    volumes:
+      - tmpfs4:/data
+      - ../..:/opt/hadoop
+  datanode5:
+    <<: *demo-datanode
+    hostname: datanode5
+    volumes:
+      - tmpfs5:/data
+      - ../..:/opt/hadoop
+
+volumes:
+  tmpfs1:
+    driver: local
+    driver_opts:
+      o: "size=2g,uid=1000"
+      device: tmpfs
+      type: tmpfs
+  tmpfs2:
+    driver: local
+    driver_opts:
+      o: "size=2g,uid=2000"
+      device: tmpfs
+      type: tmpfs
+  tmpfs3:
+    driver: local
+    driver_opts:
+      o: "size=2g,uid=3000"
+      device: tmpfs
+      type: tmpfs
+  tmpfs4:
+    driver: local
+    driver_opts:
+      o: "size=2g,uid=4000"
+      device: tmpfs
+      type: tmpfs
+  tmpfs5:
+    driver: local
+    driver_opts:
+      o: "size=2g,uid=5000"
+      device: tmpfs
+      type: tmpfs

@@ -55,6 +55,12 @@ scrape_configs:
         - "ozone-datanode-8:9882"
         - "ozone-datanode-9:9882"
         - "ozone-datanode-10:9882"
+        - # demo-volumes overlay (services datanode1 .. datanode5)
+        - "datanode1:9882"
+        - "datanode2:9882"
+        - "datanode3:9882"
+        - "datanode4:9882"
+        - "datanode5:9882"
        labels:
          component: datanode
      - targets:
