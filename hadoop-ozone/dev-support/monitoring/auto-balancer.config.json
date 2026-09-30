@@ -8,6 +8,7 @@
   "min_source_nodes": 1,
   "min_target_nodes": 1,
   "assessment_interval": "5h",
+  "profile": null,
   "sanity_check": {
     "prometheus_url": "http://prometheus:9090",
     "query_timeout_seconds": 10,
@@ -111,6 +112,115 @@
         "threshold": 40,
         "description": "Max DN deleteContainerCommand queue (StateContext + CommandDispatcher)",
         "relevance": "Deletion command backlog on DNs delays balancer source cleanup"
+      }
+    ]
+  },
+  "profile_selection": {
+    "allow_fast_profile": false,
+    "drift_bands": [
+      {
+        "up_to_drift_percent": 25,
+        "profile": "SLOW"
+      },
+      {
+        "up_to_drift_percent": 50,
+        "profile": "MEDIUM"
+      },
+      {
+        "up_to_drift_percent": 100,
+        "profile": "FAST"
+      }
+    ],
+    "step_down_checks": [
+      {
+        "group": "rm",
+        "label": "profile_under_replicated_queue_size",
+        "query": "max(replication_manager_metrics_under_replicated_queue_size)",
+        "kind": "gauge_max",
+        "threshold": 500,
+        "description": "RM under-replicated queue (profile step-down)",
+        "relevance": "Moderate backlog → less aggressive balancer profile before moves add replicate load"
+      },
+      {
+        "group": "rm",
+        "label": "profile_over_replicated_queue_size",
+        "query": "max(replication_manager_metrics_over_replicated_queue_size)",
+        "kind": "gauge_max",
+        "threshold": 500,
+        "description": "RM over-replicated deletion queue (profile step-down)",
+        "relevance": "Moderate delete backlog → step down profile; balancer source deletes compete with this queue"
+      },
+      {
+        "group": "rm",
+        "label": "profile_inflight_replication",
+        "query": "max(replication_manager_metrics_inflight_replication)",
+        "kind": "gauge_max",
+        "threshold": 100,
+        "description": "RM outstanding replica creates (profile step-down)",
+        "relevance": "High inflight replicate work → reduce balancer aggressiveness"
+      },
+      {
+        "group": "rm",
+        "label": "profile_inflight_deletion",
+        "query": "max(replication_manager_metrics_inflight_deletion)",
+        "kind": "gauge_max",
+        "threshold": 100,
+        "description": "RM outstanding replica deletes (profile step-down)",
+        "relevance": "High inflight deletes → step down; moves finish via source deletes"
+      },
+      {
+        "group": "rm",
+        "label": "profile_replicate_container_cmds_deferred",
+        "query": "sum(increase(replication_manager_metrics_replicate_container_cmds_deferred_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Deferred replicate commands in window (profile step-down)",
+        "relevance": "Any deferral → step down profile"
+      },
+      {
+        "group": "rm",
+        "label": "profile_delete_container_cmds_deferred",
+        "query": "sum(increase(replication_manager_metrics_delete_container_cmds_deferred_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Deferred delete commands in window (profile step-down)",
+        "relevance": "Any delete deferral → step down profile"
+      },
+      {
+        "group": "rm",
+        "label": "profile_replica_create_timeout",
+        "query": "sum(increase(replication_manager_metrics_replica_create_timeout_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Replica create timeouts in window (profile step-down)",
+        "relevance": "Replication already missing SLAs → less aggressive profile"
+      },
+      {
+        "group": "rm",
+        "label": "profile_replica_delete_timeout",
+        "query": "sum(increase(replication_manager_metrics_replica_delete_timeout_total[{{counter_rate_window}}]))",
+        "kind": "counter_increase_sum",
+        "threshold": 0,
+        "description": "Replica delete timeouts in window (profile step-down)",
+        "relevance": "Delete path already timing out → step down profile"
+      },
+      {
+        "group": "scm",
+        "label": "scm_heap_utilization_ratio",
+        "query": "max(jvm_metrics_mem_heap_used_m{processname=\"StorageContainerManager\"} / jvm_metrics_mem_heap_max_m{processname=\"StorageContainerManager\"})",
+        "kind": "gauge_max",
+        "threshold": 0.50,
+        "description": "SCM JVM heap used / max (ratio)",
+        "relevance": "High SCM heap → step down profile before balancing"
+      },
+      {
+        "group": "scm",
+        "label": "scm_gc_time_rate",
+        "query": "max(rate(jvm_metrics_gc_time_millis{processname=\"StorageContainerManager\"}[{{counter_rate_window}}]))",
+        "kind": "gauge_max",
+        "threshold": 200,
+        "description": "SCM GC time rate (ms/s over window)",
+        "relevance": "Heavy GC on SCM → step down profile"
       }
     ]
   }
