@@ -8,10 +8,10 @@
   "min_source_nodes": 1,
   "min_target_nodes": 1,
   "assessment_interval": "5h",
+  "prometheus_url": "http://prometheus:9090",
+  "query_timeout_seconds": 10,
   "profile": null,
   "sanity_check": {
-    "prometheus_url": "http://prometheus:9090",
-    "query_timeout_seconds": 10,
     "counter_rate_window": "5m",
     "checks": [
       {
@@ -117,6 +117,7 @@
   },
   "profile_selection": {
     "allow_fast_profile": false,
+    "counter_rate_window": "5m",
     "drift_bands": [
       {
         "up_to_drift_percent": 25,

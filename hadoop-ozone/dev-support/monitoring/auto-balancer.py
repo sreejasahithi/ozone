@@ -40,14 +40,15 @@ Assessment config fields (all required; use null where noted to omit a CLI flag)
   threshold, include_nodes, exclude_nodes, limit, minimum_drift,
   min_eligible_datanodes, min_source_nodes, min_target_nodes, assessment_interval
 
-Optional sanity_check: null disables Prometheus checks; otherwise an object with
-prometheus_url, query_timeout_seconds, counter_rate_window, and a checks array.
+Top-level prometheus_url and query_timeout_seconds for all Prometheus queries.
+Optional sanity_check: null disables sanity; otherwise counter_rate_window and checks.
+profile_selection has its own counter_rate_window for step_down_checks.
 Each check: group (rm|dn), label, query, kind, threshold, description, relevance.
   kind gauge_max              instant query; max(series) vs threshold
   kind counter_increase_sum   same; empty successful result counts as 0
 Use {{counter_rate_window}} in query strings for PromQL range windows.
 
-profile_selection: drift_bands, allow_fast_profile, step_down_checks (rm|scm).
+profile_selection: counter_rate_window, drift_bands, allow_fast_profile, step_down_checks (rm|scm).
 
 profile: null or SLOW|MEDIUM|FAST. When set, auto profile selection and recommend still run;
   an additional USER REQUESTED PROFILE section and recommend for that profile are appended
@@ -76,7 +77,7 @@ SANITY_SECTION_MARKER = "SANITY CHECK"
 PROFILE_SECTION_MARKER = "PROFILE SELECTION"
 RECOMMEND_SECTION_MARKER = "RECOMMENDATION"
 USER_PROFILE_SECTION_MARKER = "USER REQUESTED PROFILE"
-USER_RECOMMEND_SECTION_MARKER = "USER REQUESTED RECOMMENDATION"
+USER_RECOMMEND_SECTION_MARKER = "USER REQUESTED PROFILE RECOMMENDATION"
 
 PROFILES_ORDER = ("FAST", "MEDIUM", "SLOW")
 VALID_PROFILES = frozenset(PROFILES_ORDER)
@@ -91,6 +92,8 @@ REQUIRED_KEYS = (
     "min_source_nodes",
     "min_target_nodes",
     "assessment_interval",
+    "prometheus_url",
+    "query_timeout_seconds",
     "sanity_check",
     "profile_selection",
     "profile",
@@ -225,45 +228,52 @@ def _parse_check_list(checks, ctx_prefix, allowed_groups):
     return parsed
 
 
-def load_prometheus_block(raw, ctx):
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        die(2, f"{ctx} must be null or a JSON object.")
-    prometheus_url = _require(raw, "prometheus_url", ctx)
+def _parse_counter_rate_window(value, ctx):
+    if not isinstance(value, str) or not value.strip():
+        die(2, f"{ctx} must be a PromQL duration like '5m'.")
+    window = value.strip()
+    if not re.fullmatch(r"\d+[smhdwy]", window):
+        die(2, f"{ctx} must be a PromQL duration like '5m'.")
+    return window
+
+
+def load_prometheus_connection(prometheus_url, query_timeout_seconds):
     if not isinstance(prometheus_url, str) or not prometheus_url.strip():
-        die(2, f"{ctx}.prometheus_url must be a non-empty string.")
-    block = {
-        "prometheus_url": prometheus_url.rstrip("/"),
-        "query_timeout_seconds": _pos_number(
-            _require(raw, "query_timeout_seconds", ctx),
-            f"{ctx}.query_timeout_seconds"),
-        "counter_rate_window": _require(raw, "counter_rate_window", ctx).strip(),
+        die(2, "prometheus_url must be a non-empty string.")
+    return {
+        "prometheus_url": prometheus_url.strip().rstrip("/"),
+        "query_timeout_seconds": _pos_number(query_timeout_seconds, "query_timeout_seconds"),
     }
-    if not re.fullmatch(r"\d+[smhdwy]", block["counter_rate_window"]):
-        die(2, f"{ctx}.counter_rate_window must be a PromQL duration like '5m'.")
-    return block
 
 
-def load_sanity_check(raw):
+def load_sanity_check(raw, prom_connection):
     if raw is None:
         return None
     if not isinstance(raw, dict):
         die(2, "sanity_check must be null or a JSON object.")
-    sc = load_prometheus_block(raw, "sanity_check")
+    counter_rate_window = _parse_counter_rate_window(
+        _require(raw, "counter_rate_window", "sanity_check"),
+        "sanity_check.counter_rate_window")
     checks = _require(raw, "checks", "sanity_check")
     if not checks:
         die(2, "sanity_check.checks must be a non-empty array when sanity_check is set.")
-    sc["checks"] = _parse_check_list(checks, "sanity_check.checks", SANITY_CHECK_GROUPS)
-    return sc
+    return {
+        **prom_connection,
+        "counter_rate_window": counter_rate_window,
+        "checks": _parse_check_list(checks, "sanity_check.checks", SANITY_CHECK_GROUPS),
+    }
 
 
-def load_profile_selection(raw, sanity_check):
+def load_profile_selection(raw, prom_connection):
     if not isinstance(raw, dict):
         die(2, "profile_selection must be a JSON object.")
     allow_fast = _require(raw, "allow_fast_profile", "profile_selection")
     if not isinstance(allow_fast, bool):
         die(2, "profile_selection.allow_fast_profile must be true or false.")
+
+    counter_rate_window = _parse_counter_rate_window(
+        _require(raw, "counter_rate_window", "profile_selection"),
+        "profile_selection.counter_rate_window")
 
     bands = _require(raw, "drift_bands", "profile_selection")
     if not isinstance(bands, list) or not bands:
@@ -290,16 +300,7 @@ def load_profile_selection(raw, sanity_check):
     step_down_checks = _parse_check_list(
         step_down, "profile_selection.step_down_checks", PROFILE_CHECK_GROUPS)
 
-    prom = load_prometheus_block(raw.get("prometheus"), "profile_selection.prometheus")
-    if prom is None:
-        if sanity_check is None:
-            die(2, "profile_selection needs prometheus settings: set sanity_check or "
-                   "profile_selection.prometheus { prometheus_url, ... }.")
-        prom = {
-            "prometheus_url": sanity_check["prometheus_url"],
-            "query_timeout_seconds": sanity_check["query_timeout_seconds"],
-            "counter_rate_window": sanity_check["counter_rate_window"],
-        }
+    prom = {**prom_connection, "counter_rate_window": counter_rate_window}
 
     return {
         "allow_fast_profile": allow_fast,
@@ -368,8 +369,9 @@ def load_config(path):
     if cfg["assessment_interval_s"] <= 0:
         die(2, "assessment_interval must be positive.")
 
-    cfg["sanity_check"] = load_sanity_check(cfg["sanity_check"])
-    cfg["profile_selection"] = load_profile_selection(cfg["profile_selection"], cfg["sanity_check"])
+    prom_connection = load_prometheus_connection(cfg["prometheus_url"], cfg["query_timeout_seconds"])
+    cfg["sanity_check"] = load_sanity_check(cfg["sanity_check"], prom_connection)
+    cfg["profile_selection"] = load_profile_selection(cfg["profile_selection"], prom_connection)
     cfg["profile"] = load_user_profile(cfg["profile"])
     return cfg
 
@@ -506,8 +508,6 @@ def render_config(cfg):
         render_kv("Min source nodes", cfg["min_source_nodes"]),
         render_kv("Min target nodes", cfg["min_target_nodes"]),
         render_kv("Assessment interval", cfg["assessment_interval"]),
-        render_kv("Sanity check (Prometheus)", "disabled" if cfg["sanity_check"] is None
-                  else cfg["sanity_check"]["prometheus_url"]),
     ]
     return lines
 
@@ -751,8 +751,8 @@ def step_down_profile(profile):
 
 def apply_fast_cap(profile, allow_fast):
     if profile == "FAST" and not allow_fast:
-        return "MEDIUM", "Drift band selected FAST; allow_fast_profile=false -> using MEDIUM"
-    return profile, None
+        return "MEDIUM"
+    return profile
 
 
 def select_profile(cfg, drift):
@@ -781,15 +781,13 @@ def select_profile(cfg, drift):
         notes.append(f"Metric pressure: stepped {profile} -> {stepped} (one step)")
         profile = stepped
 
-    capped, cap_note = apply_fast_cap(profile, ps["allow_fast_profile"])
-    if cap_note:
-        notes.append(cap_note)
-    profile = capped
+    profile = apply_fast_cap(profile, ps["allow_fast_profile"])
 
     lines += [
         "",
         "PROFILE METRICS (RM queues + SCM JVM; step down once if any PRESSURE)",
         render_kv("Prometheus", prom_sc["prometheus_url"]),
+        render_kv("Counter window", prom_sc["counter_rate_window"]),
     ]
     for r in metric_results:
         lines += render_metric(r)
