@@ -11,6 +11,13 @@
   "prometheus_url": "http://prometheus:9090",
   "query_timeout_seconds": 10,
   "profile": null,
+  "max_datanodes_percentage_to_involve_per_iteration": null,
+  "max_size_to_move_per_iteration_in_gb": null,
+  "max_size_entering_target_in_gb": null,
+  "max_size_leaving_source_in_gb": null,
+  "balancing_iteration_interval_minutes": null,
+  "move_timeout_minutes": null,
+  "move_replication_timeout_minutes": null,
   "sanity_check": {
     "counter_rate_window": "5m",
     "checks": [

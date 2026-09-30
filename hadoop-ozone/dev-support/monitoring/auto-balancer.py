@@ -54,7 +54,14 @@ profile: null or SLOW|MEDIUM|FAST. When set, auto profile selection and recommen
   an additional USER REQUESTED PROFILE section and recommend for that profile are appended
   (allow_fast_profile applies only to the auto-selected profile).
 
-Loop: assessment -> optional sanity -> profile + recommend -> sleep -> repeat.
+Top-level balancer tuning fields (null to omit) match containerbalancer estimate/start options
+  except include/exclude nodes: max_datanodes_percentage_to_involve_per_iteration,
+  max_size_to_move_per_iteration_in_gb, max_size_entering_target_in_gb,
+  max_size_leaving_source_in_gb, balancing_iteration_interval_minutes, move_timeout_minutes,
+  move_replication_timeout_minutes. When any tuning field is non-null, runs estimate after recommend.
+  threshold is shared with assessment/recommend. Profile for estimate: JSON profile or auto-selected.
+
+Loop: assessment -> optional sanity -> profile + recommend -> optional estimate -> sleep -> repeat.
 """
 
 import argparse
@@ -71,6 +78,7 @@ from datetime import datetime, timedelta, timezone
 
 OZONE_ASSESSMENT_CMD = ["ozone", "admin", "containerbalancer", "assessment", "--json"]
 OZONE_RECOMMEND_CMD = ["ozone", "admin", "containerbalancer", "recommend"]
+OZONE_ESTIMATE_CMD = ["ozone", "admin", "containerbalancer", "estimate"]
 DRIFT_KEY = "driftPercentage"
 VERDICT_ACTIONABLE = "actionable"
 SANITY_SECTION_MARKER = "SANITY CHECK"
@@ -78,6 +86,7 @@ PROFILE_SECTION_MARKER = "PROFILE SELECTION"
 RECOMMEND_SECTION_MARKER = "RECOMMENDATION"
 USER_PROFILE_SECTION_MARKER = "USER REQUESTED PROFILE"
 USER_RECOMMEND_SECTION_MARKER = "USER REQUESTED PROFILE RECOMMENDATION"
+ESTIMATION_SECTION_MARKER = "ESTIMATION"
 
 PROFILES_ORDER = ("FAST", "MEDIUM", "SLOW")
 VALID_PROFILES = frozenset(PROFILES_ORDER)
@@ -97,6 +106,34 @@ REQUIRED_KEYS = (
     "sanity_check",
     "profile_selection",
     "profile",
+    "max_datanodes_percentage_to_involve_per_iteration",
+    "max_size_to_move_per_iteration_in_gb",
+    "max_size_entering_target_in_gb",
+    "max_size_leaving_source_in_gb",
+    "balancing_iteration_interval_minutes",
+    "move_timeout_minutes",
+    "move_replication_timeout_minutes",
+)
+
+BALANCER_TUNING_KEYS = (
+    "max_datanodes_percentage_to_involve_per_iteration",
+    "max_size_to_move_per_iteration_in_gb",
+    "max_size_entering_target_in_gb",
+    "max_size_leaving_source_in_gb",
+    "balancing_iteration_interval_minutes",
+    "move_timeout_minutes",
+    "move_replication_timeout_minutes",
+)
+
+BALANCER_CLI_FLAGS = (
+    ("threshold", "--threshold"),
+    ("max_datanodes_percentage_to_involve_per_iteration", "--max-datanodes-percentage-to-involve-per-iteration"),
+    ("max_size_to_move_per_iteration_in_gb", "--max-size-to-move-per-iteration-in-gb"),
+    ("max_size_entering_target_in_gb", "--max-size-entering-target-in-gb"),
+    ("max_size_leaving_source_in_gb", "--max-size-leaving-source-in-gb"),
+    ("balancing_iteration_interval_minutes", "--balancing-iteration-interval-minutes"),
+    ("move_timeout_minutes", "--move-timeout-minutes"),
+    ("move_replication_timeout_minutes", "--move-replication-timeout-minutes"),
 )
 
 CHECK_KINDS = ("gauge_max", "counter_increase_sum")
@@ -321,6 +358,51 @@ def load_user_profile(raw):
     return profile
 
 
+def _parse_positive_int(value, ctx):
+    if isinstance(value, bool):
+        die(2, f"{ctx} must be a positive integer.")
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        die(2, f"{ctx} must be a positive integer (got {value!r}).")
+    if not num.is_integer():
+        die(2, f"{ctx} must be a positive integer (got {value!r}).")
+    num = int(num)
+    if num <= 0:
+        die(2, f"{ctx} must be positive.")
+    return num
+
+
+def _parse_datanodes_percentage(value, ctx):
+    num = _parse_positive_int(value, ctx)
+    if num > 100:
+        die(2, f"{ctx} must be in the range (0, 100].")
+    return num
+
+
+def _load_balancer_tuning_fields(cfg):
+    for key in BALANCER_TUNING_KEYS:
+        value = cfg[key]
+        if value is None:
+            continue
+        ctx = key
+        if key == "max_datanodes_percentage_to_involve_per_iteration":
+            cfg[key] = _parse_datanodes_percentage(value, ctx)
+        else:
+            cfg[key] = _parse_positive_int(value, ctx)
+
+
+def balancer_tuning_has_overrides(cfg):
+    return any(cfg[k] is not None for k in BALANCER_TUNING_KEYS)
+
+
+def append_balancer_cli_flags(cmd, cfg):
+    for key, flag in BALANCER_CLI_FLAGS:
+        value = cfg.get(key)
+        if value is not None:
+            cmd += [flag, str(value)]
+
+
 def load_config(path):
     if not os.path.isfile(path):
         die(2, f"Config file not found: {path}")
@@ -373,6 +455,7 @@ def load_config(path):
     cfg["sanity_check"] = load_sanity_check(cfg["sanity_check"], prom_connection)
     cfg["profile_selection"] = load_profile_selection(cfg["profile_selection"], prom_connection)
     cfg["profile"] = load_user_profile(cfg["profile"])
+    _load_balancer_tuning_fields(cfg)
     return cfg
 
 
@@ -434,6 +517,16 @@ def build_recommend_command(cfg, profile):
     cmd = list(OZONE_RECOMMEND_CMD) + ["--profile", profile]
     if cfg["threshold"] is not None:
         cmd += ["--threshold", str(cfg["threshold"])]
+    if cfg["include_nodes"]:
+        cmd += ["--include-datanodes", cfg["include_nodes"]]
+    if cfg["exclude_nodes"]:
+        cmd += ["--exclude-datanodes", cfg["exclude_nodes"]]
+    return cmd
+
+
+def build_estimate_command(cfg, profile):
+    cmd = list(OZONE_ESTIMATE_CMD) + ["--profile", profile]
+    append_balancer_cli_flags(cmd, cfg)
     if cfg["include_nodes"]:
         cmd += ["--include-datanodes", cfg["include_nodes"]]
     if cfg["exclude_nodes"]:
@@ -840,6 +933,62 @@ def run_recommend(cfg, profile, report_path, section_marker, log_prefix="recomme
     print(f"[{started.isoformat()}] {log_prefix} profile={profile} rc={rc} -> {report_path}")
 
 
+def _estimate_profile_source(cfg, auto_profile):
+    if cfg["profile"] is not None:
+        return cfg["profile"], "user profile"
+    return auto_profile, "profile selection result"
+
+
+def run_estimate(cfg, auto_profile, report_path):
+    if not balancer_tuning_has_overrides(cfg):
+        return
+    try:
+        with open(report_path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        print(f"Could not read report: {exc}")
+        return
+    if ESTIMATION_SECTION_MARKER in text:
+        return
+
+    profile, profile_source = _estimate_profile_source(cfg, auto_profile)
+    started = now_utc()
+    cmd = build_estimate_command(cfg, profile)
+    rc, stdout, stderr = run_command(cmd)
+    lines = [
+        "",
+        "=" * 72,
+        ESTIMATION_SECTION_MARKER,
+        render_kv("Generated at (UTC)", started.isoformat()),
+        render_kv("Profile", profile),
+        render_kv("Profile source", profile_source),
+        render_kv("Command", " ".join(cmd)),
+        render_kv("Exit code", rc if rc is not None else "n/a"),
+        "",
+        "USER-PROVIDED BALANCER OPTIONS",
+    ]
+    if cfg["threshold"] is not None:
+        lines.append(render_kv("threshold", cfg["threshold"]))
+    for key in BALANCER_TUNING_KEYS:
+        if cfg[key] is not None:
+            lines.append(render_kv(key, cfg[key]))
+    lines.append("")
+    if rc is None or rc != 0:
+        lines += [
+            "RESULT: ERROR - estimate command failed.",
+            "",
+            "STDERR:",
+            stderr.strip() or "(empty)",
+            "",
+            "STDOUT:",
+            stdout.strip() or "(empty)",
+        ]
+    else:
+        lines += ["RESULT: success", "", stdout.rstrip() or "(empty stdout)"]
+    append_report(report_path, lines)
+    print(f"[{started.isoformat()}] estimate profile={profile} rc={rc} -> {report_path}")
+
+
 def run_planning_pipeline(cfg, report_path, verdict, drift):
     if verdict != VERDICT_ACTIONABLE:
         return
@@ -869,6 +1018,8 @@ def run_planning_pipeline(cfg, report_path, verdict, drift):
         run_recommend(
             cfg, user_profile, report_path, USER_RECOMMEND_SECTION_MARKER,
             log_prefix="user-requested recommend")
+
+    run_estimate(cfg, profile, report_path)
 
 
 def run_once(cfg, output_dir):
